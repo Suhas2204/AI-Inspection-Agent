@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+runs/
+__pycache__/
+.venv/
+*.wav
