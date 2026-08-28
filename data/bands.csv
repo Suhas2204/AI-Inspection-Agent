@@ -1,0 +1,30 @@
+row_kind,key,order_reference,n_components,band,banded_by,banded_on,note
+device_type,"C60N,1P,16A,B",A9F03116,23,,,,
+device_type,ED138,A0860431,16,,,,
+device_type,ED2,2CPX062320R9999,10,,,,
+device_type,"iC40N,3P+N,16A,B",A9P44716,7,,,,
+device_type,0792,104013.SK,5,,,,
+device_type,"FI,4P,40A,30mA, Typ A",A9Z21440,5,,,,
+device_type,ED12,A0860162,4,,,,
+device_type,"C60N,3P,16A,B",A9F03316,3,,,,
+device_type,"iC40N,1P+N,16A,B",A9P44616,3,,,,
+device_type,"2P 13A-B/30mA, Typ A",A9D56613,2,,,,
+device_type,"2P 16A-B/30mA, Typ A",A9D56616,2,,,,
+device_type,"4Ö,63A,230VAC",A9C20867,2,,,,
+device_type,"C60N,1P,10A,B",A9F03110,2,,,,
+device_type,400V 63A 4pol,A9S65463,1,,,,
+device_type,"4S,63A,230VAC",A9C20864,1,,,,
+device_type,"C60N,3P,10A,B",A9F03310,1,,,,
+device_type,Dämmerungsschalter,CCT15369,1,,,,
+device_type,EPS-T2/3+1-275-FM,380615,1,,,,
+device_type,Netzüberwachungsrelais,NR12-001-3x230V,1,,,,
+device_type,Schaltuhr 1- Kanal,CCT15365,1,,,,
+device_type,"iC40N,1P+N,10A,B",A9P44610,1,,,,
+terminal_strip,-X1,,6,,,,WDU 35N DBS×3; ZEW 35 DBS×1; WDU 35NBL×1; WPE 35N×1
+terminal_strip,-X2,,11,,,,AITB 2.5 BB L-L MC×4; AITB 2.5 BB NDT-L-PE MC×4; ZEW 35 DBS×1; WPE 16N×1; WNT 16N×1
+terminal_strip,-X3,,11,,,,AITB 2.5 BB NDT-L-PE MC×6; AITB 2.5 BB L-L MC×3; ZEW 35 DBS×1; WNT 16N×1
+terminal_strip,-X4,,9,,,,AITB 2.5 BB N-L-PE MC×8; ZEW 35 DBS×1
+terminal_strip,-X5,,20,,,,AITB 2.5 BB NDT-L-PE MC×17; ZEW 35 DBS×2; WNT 16N×1
+terminal_strip,-X6,,7,,,,AITB 2.5 BB NDT-L-PE MC×4; ZEW 35 DBS×1; AITB 2.5 BB L-L MC×1; WNT 16N×1
+terminal_strip,-X7,,12,,,,AITB 2.5 BB NDT-L-PE MC×8; AITB 2.5 BB L-L MC×2; ZEW 35 DBS×1; WNT 16N×1
+terminal_strip,-X8,,5,,,,AITB 2.5 BB L-L-PE MC×3; ZEW 35 DBS×2
