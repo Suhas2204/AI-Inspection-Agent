@@ -192,6 +192,57 @@ def normalise_rating(raw: str) -> Normalised:
     return Normalised(raw, value, "rating", True, "", out)
 
 
+def normalise_tag(raw: str) -> Normalised:
+    """Spoken device tag -> canonical form. 'Minus 5, F2' -> '-5F2'.
+
+    Tags are the one place CONTEXT §7 allows a closed vocabulary, because the
+    schematic enumerates every legal value. This function still does not snap
+    to that set -- it only canonicalises. Membership is the adjudicator's call.
+
+    Built from real transcripts (Block 5, 28 Aug): faster-whisper emitted
+    'Minus 5, F2', 'minus 1q1', 'minus 13 k2', 'minus 12 f6'.
+    """
+    tokens = _expand_repeats(_pre(raw))
+    out: list[str] = []
+    unknown: list[str] = []
+
+    for tok in tokens:
+        if tok in {"minus", "dash", "hyphen", "negative"}:
+            continue                      # the leading '-' is added at the end
+        if tok.isdigit():
+            out.append(tok)
+        elif tok in DIGIT_WORDS:
+            out.append(DIGIT_WORDS[tok])
+        elif tok in TEEN_TENS_WORDS:
+            out.append(TEEN_TENS_WORDS[tok])
+        elif tok in PHONETIC:
+            out.append(PHONETIC[tok])
+        elif len(tok) == 1 and tok.isalpha():
+            out.append(tok.upper())
+        elif re.fullmatch(r"[a-z0-9]+", tok):
+            out.append(tok.upper())       # already merged, e.g. '1q1'
+        elif tok in NOISE_WORDS:
+            continue
+        else:
+            unknown.append(tok)
+
+    body = "".join(out)
+    value = f"-{body}" if body else ""
+
+    if unknown:
+        return Normalised(raw, value, "tag", False,
+                          f"unrecognised token(s): {', '.join(unknown)}", out)
+    if not body:
+        return Normalised(raw, "", "tag", False, "nothing recognised", out)
+    # Both real shapes in this cabinet: '-10F1' (62 tags) and '-D1' (38 tags).
+    # Strip tags '-X1'..'-X8' fall under the second.
+    if not re.fullmatch(r"-[0-9]{1,2}[A-Z]{1,2}[0-9]{1,2}|-[A-Z]{1,2}[0-9]{1,3}",
+                        value):
+        return Normalised(raw, value, "tag", False,
+                          f"shape implausible for a tag: {value!r}", out)
+    return Normalised(raw, value, "tag", True, "", out)
+
+
 def compact(text: str) -> str:
     """THE canonical form. Both sides of every comparison go through this one
     function -- speech and schematic alike. Defining it twice is how the

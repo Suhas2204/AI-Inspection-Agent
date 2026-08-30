@@ -216,6 +216,44 @@ class Adjudicator:
                        f"rating line reads {rating}, schematic expects "
                        f"{exp_rating}", tag, read, expected)
 
+    def judge_tag(self, tag: str, read_tag: str | None,
+                  well_formed: bool = True) -> Verdict:
+        """Tag-only mode. Compares the spoken tag against the tag expected here.
+
+        Scope, stated plainly so the thesis does not overclaim: this verifies
+        that the trainee is at the right place and that the label there is the
+        right label. It cannot detect a wrong part fitted under a correct
+        label, because the tag does not change when the device does.
+        """
+        expected = {"tag": tag}
+        read = {"tag": (read_tag or "").upper()}
+        got = read["tag"]
+
+        if not got:
+            return Verdict(ABSTAIN, "nothing was read", tag, read, expected)
+        if not well_formed:
+            return Verdict(ABSTAIN, "the read was malformed; ask again",
+                           tag, read, expected)
+        if got == tag.upper():
+            return Verdict(MATCH, "tag matches the schematic at this location",
+                           tag, read, expected)
+
+        known = {t.upper() for t in self.devices} | {t.upper() for t in STRIP_TAGS}
+        if got in known:
+            return Verdict(MISMATCH,
+                           f"reads {got}, but {tag} is expected at this location; "
+                           f"{got} belongs elsewhere in this cabinet",
+                           tag, read, expected)
+
+        d = edit_distance(got, tag.upper())
+        if d <= 1:
+            return Verdict(ABSTAIN,
+                           f"{got} is no tag in this cabinet and differs from the "
+                           f"expected {tag} by {d} character; likely a misread. "
+                           f"Ask again", tag, read, expected)
+        return Verdict(NOT_IN_SCHEMATIC, f"{got} is no tag in this cabinet",
+                       tag, read, expected)
+
     # ----------------------------------------------------------------- strips
     def expected_counts(self, tag: str) -> Counter:
         total = Counter()

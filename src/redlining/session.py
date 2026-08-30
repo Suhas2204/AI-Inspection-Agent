@@ -27,15 +27,20 @@ from pathlib import Path
 
 from .adjudicate import Adjudicator, ABSTAIN, compact
 from .checklist import Item, load_checklist
-from .normalise import normalise_part, normalise_rating
+from .normalise import normalise_part, normalise_rating, normalise_tag
 from .report import Annotation, Attempt, RunLog
 
 MAX_REASKS = 2                    # 3 attempts total, per CONTEXT §7
+
+TAG_MODE_WARNING = (
+    "MODE: tag only. This checks that the right label is in the right\n"
+    "place. It cannot detect a wrong part fitted under a correct label.\n")
 
 
 @dataclass
 class Read:
     """One spoken attempt, before anything has been judged."""
+    tag_raw: str = ""
     part_raw: str = ""
     rating_raw: str = ""
     counts_raw: str = ""
@@ -44,18 +49,23 @@ class Read:
 
     @property
     def raw(self) -> str:
-        return " | ".join(x for x in (self.part_raw, self.rating_raw,
-                                      self.counts_raw) if x)
+        return " | ".join(x for x in (self.tag_raw, self.part_raw,
+                                      self.rating_raw, self.counts_raw) if x)
 
 
 class KeyboardInput:
     """Stand-in for the microphone. Same interface a recorder would expose."""
+
+    def __init__(self, mode: str = "part"):
+        self.mode = mode
 
     def device(self, prompt: str, attempt: int) -> Read:
         if attempt == 1:
             print(f"\n  {prompt}")
         else:
             print("\n  Please read it again.")      # silent: no echo, no hint
+        if self.mode == "tag":
+            return Read(tag_raw=input("    tag: ").strip())
         part = input("    part number : ").strip()
         rating = input("    rating line: ").strip()
         return Read(part_raw=part, rating_raw=rating)
@@ -69,21 +79,37 @@ class KeyboardInput:
         return Read(counts_raw=counts)
 
 
+WORD_DIGITS = {"ZERO": 0, "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
+               "SIX": 6, "SEVEN": 7, "EIGHT": 8, "NINE": 9, "TEN": 10,
+               "ELEVEN": 11, "TWELVE": 12, "THIRTEEN": 13, "FOURTEEN": 14,
+               "FIFTEEN": 15, "SIXTEEN": 16, "SEVENTEEN": 17, "EIGHTEEN": 18,
+               "NINETEEN": 19, "TWENTY": 20}
+FUNCTIONS = {"N", "L", "PE", "BRACKET"}
+
+
 def parse_counts(text: str) -> dict:
-    """'N 8 L 8 PE 8' -> {'N':8,'L':8,'PE':8}. Tolerates commas and colons."""
+    """'N 8 L 8 PE 8' -> {'N':8,'L':8,'PE':8}.
+
+    Spoken counts arrive as words ('N eight L eight'), so number words are
+    accepted too. Only known function names are treated as keys, so stray
+    words in a transcript do not invent a function.
+    """
     toks = text.replace(",", " ").replace(":", " ").upper().split()
     out, key = {}, None
     for t in toks:
-        if t.isdigit() and key:
-            out[key] = int(t)
+        value = int(t) if t.isdigit() else WORD_DIGITS.get(t)
+        if value is not None and key:
+            out[key] = value
             key = None
-        elif t.isalpha():
+        elif t in FUNCTIONS:
             key = t
     return out
 
 
 def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
-        max_reasks: int = MAX_REASKS) -> None:
+        max_reasks: int = MAX_REASKS, mode: str = "part") -> None:
+    """mode='part': part number + rating line (CONTEXT §7).
+    mode='tag' : the tag only -- simpler, and blind to a wrong part."""
     started = time.monotonic()
 
     for item in items:
@@ -102,6 +128,11 @@ def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
                 verdict = adj.judge_strip(item.tag, parse_counts(read.counts_raw))
                 normalised = str(parse_counts(read.counts_raw))
                 well_formed = bool(parse_counts(read.counts_raw))
+            elif mode == "tag":
+                t = normalise_tag(read.tag_raw)
+                normalised = t.value
+                well_formed = t.well_formed
+                verdict = adj.judge_tag(item.tag, t.value, t.well_formed)
             else:
                 p = normalise_part(read.part_raw) if read.part_raw else None
                 r = normalise_rating(read.rating_raw) if read.rating_raw else None
@@ -164,9 +195,9 @@ class ScriptedInput:
         self.adj = adj
 
     def device(self, prompt: str, attempt: int) -> Read:
-        tag = self._tag
-        rec = self.adj.devices[tag]
-        return Read(part_raw=rec["order_reference"], rating_raw=rec["type"])
+        rec = self.adj.devices[self._tag]
+        return Read(tag_raw=self._tag, part_raw=rec["order_reference"],
+                    rating_raw=rec["type"])
 
     def strip(self, prompt: str, attempt: int) -> Read:
         counts = self.adj.expected_counts(self._tag)
@@ -181,6 +212,15 @@ def main() -> None:
     ap.add_argument("--runs-dir", default="runs")
     ap.add_argument("--scripted", action="store_true",
                     help="smoke test: feed the schematic back in, no keyboard")
+    ap.add_argument("--live", action="store_true",
+                    help="use the microphone and local Whisper")
+    ap.add_argument("--model", default="small",
+                    help="faster-whisper size: tiny|base|small|medium|large-v3")
+    ap.add_argument("--speak", action="store_true",
+                    help="read prompts aloud (needs pyttsx3)")
+    ap.add_argument("--mode", choices=["part", "tag"], default="part",
+                    help="'part': part number + rating line. "
+                         "'tag': tag only -- cannot detect a wrong part")
     args = ap.parse_args()
 
     adj = Adjudicator.from_export(args.export)
@@ -192,8 +232,17 @@ def main() -> None:
     print("Advisory only. This run passes or fails nothing.\n")
 
     log = RunLog(root=Path(args.runs_dir))
-    source = ScriptedInput(adj) if args.scripted else KeyboardInput()
-    run(items, adj, source, log)
+    if args.scripted:
+        source = ScriptedInput(adj)
+    elif args.live:
+        from .audio_input import LiveInput
+        source = LiveInput(log.dir / "audio", model_size=args.model,
+                           speak=args.speak, mode=args.mode)
+    else:
+        source = KeyboardInput(args.mode)
+    if args.mode == "tag":
+        print(TAG_MODE_WARNING)
+    run(items, adj, source, log, mode=args.mode)
     if not args.scripted:
         triage(log)
     log.write_report(expected_items=len(items))
