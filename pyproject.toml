@@ -1,3 +1,9 @@
+[project]
+name = "redlining"
+version = "0.1.0"
+description = "Voice-guided inspection assistant for one control cabinet"
+readme = "README.md"
+requires-python = ">=3.11"
 dependencies = [
     "faster-whisper>=1.2.1",
     "openai>=3.5.0",
