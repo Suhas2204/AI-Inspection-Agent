@@ -163,6 +163,7 @@ def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
             break
 
     duration = time.monotonic() - started
+    log.duration_s = duration
     log.write_report(expected_items=len(items), duration_s=duration)
 
 
@@ -245,7 +246,8 @@ def main() -> None:
     run(items, adj, source, log, mode=args.mode)
     if not args.scripted:
         triage(log)
-    log.write_report(expected_items=len(items))
+        # Re-emit so annotations appear. Keep the duration from the timed run.
+        log.write_report(expected_items=len(items), duration_s=log.duration_s)
     print(f"\nReport: {log.dir / 'report.md'}")
 
 

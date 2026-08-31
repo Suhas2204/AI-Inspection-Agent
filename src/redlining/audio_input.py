@@ -88,7 +88,7 @@ class LocalTranscriber:
         except ImportError:
             sys.exit("Missing ASR dep. Run: uv add faster-whisper")
         print(f"  loading {model_size} (first run downloads weights) ...")
-        self.model = WhisperModel(model_size, device="auto", compute_type="int8")
+        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
         self.language = language
         print("  ready.\n")
 

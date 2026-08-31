@@ -202,7 +202,10 @@ def normalise_tag(raw: str) -> Normalised:
     Built from real transcripts (Block 5, 28 Aug): faster-whisper emitted
     'Minus 5, F2', 'minus 1q1', 'minus 13 k2', 'minus 12 f6'.
     """
-    tokens = _expand_repeats(_pre(raw))
+    # Whisper punctuates: 'minus 5F3.' arrives with the stop attached to the
+    # token. Found in the first live run, 31 Aug -- it cost 2 of 10 items.
+    tokens = [t.strip(".,;:!?") for t in _expand_repeats(_pre(raw))]
+    tokens = [t for t in tokens if t]
     out: list[str] = []
     unknown: list[str] = []
 

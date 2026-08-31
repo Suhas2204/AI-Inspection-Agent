@@ -70,6 +70,7 @@ class RunLog:
         self._attempts: list[Attempt] = []
         self._annotations: list[Annotation] = []
         self.started_at = _now()
+        self.duration_s: float | None = None
 
     def _append(self, path: Path, payload: dict) -> None:
         with open(path, "a", encoding="utf-8") as fh:
@@ -144,9 +145,10 @@ class RunLog:
     def _write_markdown(self, report: dict) -> None:
         """A reviewer should be able to act on this without asking a question."""
         L = [f"# Inspection run {report['run_id']}", ""]
+        dur = report.get("duration_s")
+        dur_txt = f"{round(dur)}s" if dur else "duration not recorded"
         L.append(f"Cabinet 20160387 · {report['items_verdicted']} of "
-                 f"{report['items_expected']} items · "
-                 f"{report['duration_s'] and round(report['duration_s'])}s")
+                 f"{report['items_expected']} items · {dur_txt}")
         L.append("")
         L.append("**Advisory only. This run passes or fails nothing. "
                  "A qualified person reviews every flag and signs off.**")
@@ -175,8 +177,12 @@ class RunLog:
             L.append(f"- Location given: {i['spoken_prompt']}")
             L.append(f"- Heard: `{i['raw_transcript']}`")
             L.append(f"- Normalised: `{i['normalised']}`")
-            L.append(f"- Schematic expects: `{i['expected'].get('part') or ''} "
-                     f"{i['expected'].get('rating') or ''}`".rstrip())
+            exp = i["expected"]
+            shown = (exp.get("part") or exp.get("counts")
+                     or (exp.get("tag") if not exp.get("part") else None) or "")
+            if exp.get("part") and exp.get("rating"):
+                shown = f"{exp['part']} {exp['rating']}"
+            L.append(f"- Schematic expects: `{shown}`")
             L.append(f"- Reason: {i['reason']}")
             L.append(f"- Audio: {i['audio_path'] or 'not retained'}")
             for n in i["annotations"]:
@@ -188,7 +194,8 @@ class RunLog:
         L.append("| item | band | outcome | heard | expected |")
         L.append("|---|---|---|---|---|")
         for i in report["items"]:
-            exp = (i["expected"].get("part") or i["expected"].get("counts") or "")
+            exp = (i["expected"].get("part") or i["expected"].get("counts")
+                   or i["expected"].get("tag") or "")
             L.append(f"| {i['item']} | {i['band']} | {i['outcome']} | "
                      f"`{i['normalised']}` | `{exp}` |")
         L.append("")

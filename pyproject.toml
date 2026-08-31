@@ -5,11 +5,13 @@ description = "Voice-guided inspection assistant for one control cabinet"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "faster-whisper>=1.2.1",
+    "faster-whisper==1.2.1",
+    "ctranslate2==3.24.0",
+    "setuptools<81",
     "openai>=3.5.0",
     "sounddevice>=0.5.0",
-    "soundfile>=0.12.1",
-    "numpy>=2.0",
+    "soundfile>=0.14.0",
+    "numpy<2.0",
 ]
 
 [build-system]
