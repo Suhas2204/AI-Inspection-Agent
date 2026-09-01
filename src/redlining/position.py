@@ -174,7 +174,7 @@ def show(items, orphans, include_structural):
           f"{'INCLUDED as items' if include_structural else 'excluded'}")
     if not include_structural:
         print("  -- run with --include-structural to see the other number.")
-        print("  -- CONTEXT §6 says 100 items and assumes they are included.")
+        print("  -- CONTEXT §6 says 70 items and assumes they are included.")
 
     if orphans:
         print(f"\n  ! {len(orphans)} part(s) sit at no rail height. Not guessed at:")
