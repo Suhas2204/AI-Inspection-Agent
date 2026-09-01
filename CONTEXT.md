@@ -306,3 +306,38 @@ Challenge §9 rather than inheriting it. If a suggestion conflicts with §4 or �
 say so instead of working around it. If you believe a §7 decision is wrong, argue
 against the stated reason. Do not inherit the numbers in §6 — every one of them
 came from running code against the export, and three of them were wrong in v2.0.
+
+
+
+
+### Metrics — defined before measurement, in priority order
+
+`DECISION` These six are the whole evaluation. Nothing is reported that is not
+on this list, and nothing on this list is skipped because it came out badly.
+
+| # | Metric | Question it answers | Input | Computed in | State |
+|---|---|---|---|---|---|
+| 1 | **Redline precision** | Of flags raised, how many are genuine schematic errors worth sending upstream? | `runs/*/report.md` + adjudication by the author against the cabinet | `experiments/block09_eval/redlines.py` | not started |
+| 2 | **Detection rate @ 10% abstain** | Of planted faults, how many are flagged when the system may skip 10% of items? | `runs/*/attempts.csv` + `faults.csv` | `block09_eval/score.py` | not started |
+| 3 | **Risk–coverage curve** | How much does detection improve as the system is allowed to abstain more? | same as 2 | `block09_eval/score.py` | not started |
+| 4 | **Confusability map** | Which device tags are close enough that a one-character misread yields a different *legal* tag? | `data/schematic.cleaned.json` only | `block09_eval/confusability.py` | not started |
+| 5 | **ASR character accuracy** | Does Whisper hear the tag, and which character does it lose? | `data/transcripts.csv`, `expected` column filled by hand | `experiments/block05_asr/score.py` | blocked: `expected` empty |
+| 6 | **Time per cabinet** | Does a run fit inside the working shift? | `RunLog.duration_s` | already recorded | measured, not reported |
+
+**Priority is deliberate.** 1 is the thesis claim: this project is about
+redlining, and a flag that never becomes a correction is not a redline. 2 and 3
+are the standard selective-prediction pair and give the claim its shape. 4 is
+free — it needs no run, and it bounds what voice can ever achieve on *this*
+cabinet, which is how the Phase 2 camera decision gets derived from data rather
+than asserted. 5 and 6 are plumbing: they explain results, they do not
+constitute them.
+
+**What none of these can claim.** All six are computed by the author, on one
+cabinet, against faults the author planted, using the schematic as ground truth.
+`ASSUMPTION` the schematic is correct where the cabinet and it disagree — which
+is precisely what a redline denies. Every redline in metric 1 must therefore be
+resolved by eye at the cabinet, and that resolution is unblinded.
+
+`OPEN` Whether any of the four device-tag pairs found by metric 4 are physically
+adjacent in the walking order. Adjacent twins are worse than distant ones: a
+misheard tag lands on a real neighbour and the mismatch never surfaces.

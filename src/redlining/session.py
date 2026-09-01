@@ -56,7 +56,7 @@ class Read:
 class KeyboardInput:
     """Stand-in for the microphone. Same interface a recorder would expose."""
 
-    def __init__(self, mode: str = "part"):
+    def __init__(self, mode: str = "tag"):
         self.mode = mode
 
     def device(self, prompt: str, attempt: int) -> Read:
@@ -107,7 +107,7 @@ def parse_counts(text: str) -> dict:
 
 
 def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
-        max_reasks: int = MAX_REASKS, mode: str = "part") -> None:
+        max_reasks: int = MAX_REASKS, mode: str = "tag") -> None:
     """mode='part': part number + rating line (CONTEXT §7).
     mode='tag' : the tag only -- simpler, and blind to a wrong part."""
     started = time.monotonic()
@@ -219,7 +219,7 @@ def main() -> None:
                     help="faster-whisper size: tiny|base|small|medium|large-v3")
     ap.add_argument("--speak", action="store_true",
                     help="read prompts aloud (needs pyttsx3)")
-    ap.add_argument("--mode", choices=["part", "tag"], default="part",
+    ap.add_argument("--mode", choices=["part", "tag"], default="tag",
                     help="'part': part number + rating line. "
                          "'tag': tag only -- cannot detect a wrong part")
     args = ap.parse_args()
