@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "faster-whisper==1.2.1",
-    "ctranslate2==3.24.0",
+    "ctranslate2==4.0",
     "setuptools<81",
     "openai>=3.5.0",
     "sounddevice>=0.5.0",
