@@ -1,41 +1,82 @@
-## Block 0 — 25 Aug
+
+# DECISIONS.md
+
+## Block 0 — Spec — 25 Aug
+
 Expected: ~60 parts.
-Found: 220 in the export.
-Changed: replaced CONTEXT.md with v2.0.
+Found: 220 records in the export.
+Changed: replaced CONTEXT.md with v2.0 (now superseded by v3.0, 12 Sep).
 
+## Block 1 — Loader — 26 Aug
 
-## Block 1 — 26 Aug
 Expected: 173 core, 37 part numbers.
-Got: 173 core, 92 devices, 8 strips — but 31 part numbers. The other 6 belonged to filler parts.
-Changed: gate is 31.
+Found: 173 core, 92 devices, 8 strips — but 31 part numbers.
+       The other 6 belonged to filler parts.
+Changed: gate count is 31.
+Gate: FILL: PASSED if the 26 Aug run against the raw export was clean;
+      otherwise run loader.py once and date it here.
 
+## Block 2 — Position — 27 Aug
 
-## Block 2 — GATE did not passed, 27 Aug 
-Expected: derived walking order (frame → row → position) to match the physical cabinet. 
-Found: walked the cabinet with the printed walking_order.csv and checked it item by item. 
-Order matches: left to right, top to bottom, one walk, no backtracking. 
-Gate: NOT PASSED.
+Gate: PASSED.
+Found: walked the cabinet with printed walking_order.csv, item by item.
+       Order matches: left to right, top to bottom, one walk, no backtracking.
+Note: earlier entry wrongly said NOT PASSED; corrected 13 Sep.
 
+## Block 3 — Bands — closed 30 Aug
 
-## Block 3 — opened 28 Aug, IN PROGRESS
-Expected: 21 device types + 8 strips = 29 rows.
-Found: 29 rows, confirmed against schematic.cleaned.json. 21 types cover 92 devices;
-       one type (C60N,1P,16A,B / A9F03116) accounts for 23 of them.
-       Also confirmed: 31 distinct part numbers, not 37.
-Changed: make_bands.py added. bands.csv generated, band column empty by design.
-Decided: bands.csv is not regenerated — it holds human decisions. Positions may change; bands do not.
+Found: all 29 rows banded (bands.csv, banded_by Suhas, 30/08/2026).
+       21 device types cover 62 devices; 8 strips cover 81 terminals.
+Decided: bands.csv is not regenerated — it holds human decisions.
+ZEW 35 DBS end brackets (10): IN strip counts. They appear as a BRACKET
+       function in the expected counts (attempts.jsonl) and in strip
+       composition notes (bands.csv).
+       Reason: FILL: one line — why brackets are worth counting aloud.
+       (§10 still lists this OPEN — this entry closes it.)
+Advisor session: FILL: date it was held, or write "not yet held —
+       CLAUDE.md §11 'advisor confirmed' is unsupported until then."
+Gate: PASSED — all 70 checklist items carry a band via type inheritance.
+Note: earlier entry said "100 items" — dead count from v2.0; v3.0 is 70.
 
-Open, must close before the gate:
-  - ZEW 35 DBS end brackets (10, across all 8 strips): count toward strip totals? ___ in / ___ out
-    Reason: ______
-  - Advisor session booked for: ______
-  - Banded by: ______   on: ______
+## Block 4 — Normaliser — [date FILL]
 
-Gate: NOT passed. Passes when all 100 items carry a band.
+Found: rules survive real tag reads.
+Changed: punctuation bug found and fixed during live runs.
+Gate: PASSED.
 
+## Block 5 — ASR check — partial, 28 Aug, corrected 13 Sep
 
-Block 5 — partial, 28 Aug
-Ran: faster-whisper large-v3, 19 tag reads, quiet lab, no API (no credit).
-Found: tags transcribe cleanly. Pipeline works.
-NOT measured: part numbers, rating lines, B16/B10.
-Gate: NOT passed.
+Ran: faster-whisper large-v3, quiet lab. 19 segments ≈ 26 reads,
+     OLD per-terminal convention (predates the strip-count decision).
+Found: local 26/26 correct. Expected filled by author listening to audio.
+       All spoken tags verified legal against walking_order.csv.
+Caveats: single speaker = author; N small; old convention.
+OPEN: API comparison pass (no credit) — run or skip, decide by: FILL.
+NOT measured: count-style strip speech — the type that abstained live —
+     part numbers, rating lines, B16/B10.
+Gate: NOT passed until count-style strips are recorded and scored.
+
+## Block 6 — Adjudicator — [date FILL]
+
+Found: all four outcomes reachable.
+Open: tests still in __main__, not tests/. Move before Block 9 relies
+      on them.
+Gate: NOT passed until tests moved and run green.
+
+## Block 7 — Session — [date FILL]
+
+Found: live runs completed at the cabinet. Tag items worked.
+       Strips -X3, -X6, -X7 abstained on every attempt (attempts.jsonl:
+       raw transcript empty or "You"). Cause unknown: audio path,
+       phrasing, or model. Diagnose before Block 9.
+Gate: PASSED for tags; strip path unresolved.
+
+## Block 8 — Flags/report — [date FILL]
+
+Found: report generated (report.md / report.json). Flags append-only,
+       audio retained per attempt. No delete path in report.py.
+Gate: PASSED.
+
+## Block 9 — Evaluation — NOT STARTED. This is the thesis chapter.
+
+## Block 10 — Redlines — not started; cut first if time runs short.
