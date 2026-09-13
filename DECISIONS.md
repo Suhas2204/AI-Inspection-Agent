@@ -56,12 +56,11 @@ NOT measured: count-style strip speech — the type that abstained live —
      part numbers, rating lines, B16/B10.
 Gate: NOT passed until count-style strips are recorded and scored.
 
-## Block 6 — Adjudicator — [date FILL]
+## Block 6 — Adjudicator — 13 Sep
 
 Found: all four outcomes reachable.
-Open: tests still in __main__, not tests/. Move before Block 9 relies
-      on them.
-Gate: NOT passed until tests moved and run green.
+Changed: tests moved, 11 passing, gate PASSED.
+Gate: PASSED.
 
 ## Block 7 — Session — [date FILL]
 

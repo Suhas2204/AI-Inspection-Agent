@@ -291,43 +291,11 @@ class Adjudicator:
 
 
 if __name__ == "__main__":
+    # Demo cases live in tests/test_adjudicate.py now -- run `pytest` for those.
     adj = Adjudicator.from_export("data/schematic.cleaned.json")
     print(f"{len(adj.devices)} devices · {len(adj.terminals)} terminals · "
           f"{len(adj.legal_parts)} legal part numbers\n")
 
-    cases = [
-        # -8F7 really is A9F03110 / C60N,1P,10A,B -- a B10 among the B16s.
-        ("match, both values",
-         adj.judge_device("-8F7", part="A9F03110", rating=compact("C60N,1P,10A,B"))),
-        ("mismatch, B16 fitted where B10 belongs",
-         adj.judge_device("-8F7", part="A9F03116", rating=compact("C60N,1P,16A,B"))),
-        ("not_in_schematic, foreign part",
-         adj.judge_device("-8F7", part="XYZ99999", rating=compact("C60N,1P,10A,B"))),
-        ("abstain, one character off the expected value",
-         adj.judge_device("-8F7", part="A9F03115", rating=compact("C60N,1P,10A,B"))),
-        ("abstain, the two values on the label disagree",
-         adj.judge_device("-8F7", part="A9F03110", rating=compact("C60N,1P,16A,B"))),
-        ("abstain, malformed read",
-         adj.judge_device("-8F7", part="A9F0311", part_well_formed=False)),
-        ("match, label with no printed part number",
-         adj.judge_device("-5F1", rating=compact("2P 16A-B/30mA, Typ A"))),
-        ("mismatch, no-part label reading the wrong rating",
-         adj.judge_device("-5F1", rating=compact("2P 13A-B/30mA, Typ A"))),
-    ]
-    for name, v in cases:
-        print(f"  {v.outcome:17} {name}\n      {v.reason}")
-
-    print("\n  strips:")
+    print("  strips:")
     for tag in STRIP_TAGS:
         print(f"    {tag}  expected {dict(adj.expected_counts(tag))}")
-
-    print()
-    good = adj.judge_strip("-X4", dict(adj.expected_counts("-X4")))
-    print(f"  {good.outcome:17} strip counts correct")
-    bad = adj.judge_strip("-X4", {"N": 7, "L": 8, "PE": 8, "BRACKET": 1})
-    print(f"  {bad.outcome:17} strip counts wrong\n      {bad.reason}")
-
-    reached = {v.outcome for _, v in cases} | {good.outcome, bad.outcome}
-    print(f"\n  outcomes reached: {sorted(reached)}")
-    missing = {MATCH, MISMATCH, NOT_IN_SCHEMATIC, ABSTAIN} - reached
-    print("  all four reachable" if not missing else f"  NOT reached: {missing}")
