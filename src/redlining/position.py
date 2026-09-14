@@ -1,31 +1,16 @@
-"""
-Block 2 — Position.
-
-Turns schematic coordinates into locations a person can hear and act on:
+"""Block 2: turn schematic coordinates into locations a person can hear.
 
     left frame, row 4, position 5   ->   -7F1
 
-HOW ROWS ARE FOUND (changed 31 Aug, after the first live run)
+- A row is a DIN rail record (type ED2; -D1..-D5 left frame, -D11..-D15
+  right frame). A device belongs to the rail whose y it matches.
+- Wire ducts (ED138, ED12) sit between rails; they are not rows.
+- Nothing here is verified: print the sheet and check it at the cabinet.
 
-The old version clustered records by height with ROW_TOLERANCE_MM and produced
-ten rows per frame where the cabinet has five. It was guessing at something the
-export already states.
-
-The DIN rails are records in their own right: type ED2, tagged -D1..-D5 in the
-left frame and -D11..-D15 in the right, all 495 mm wide. Every device sits at
-exactly its rail's y. So a row is not a cluster -- it is a rail, named by the
-rail's own record, and a device belongs to the rail whose y it matches.
-
-The ED138 and ED12 records are wire ducts, sitting BETWEEN rails at -287.5,
--512.5, -587.5, -1112.5 and -1900. Those heights were the phantom rows.
-
-Nothing here is verified. The computer cannot tell you whether row 3 is really
-the third row you see. Print the sheet, stand at the cabinet, check it.
-
-Usage:
-    python position.py
-    python position.py --csv data/walking_order.csv
-    python position.py --include-structural      # keep rails and ducts as items
+Run:
+    uv run python -m redlining.position
+    uv run python -m redlining.position --csv data/walking_order.csv
+    uv run python -m redlining.position --include-structural   # keep rails and ducts
 """
 
 import argparse
@@ -58,7 +43,16 @@ RAIL_SNAP_MM = 1.0
 
 
 def frame_of(record):
-    prefix = record["location"].split(".")[0]
+    """Find which frame a record belongs to from its location prefix.
+
+    Args:
+        record: Component record with a "location" field.
+
+    Returns:
+        (prefix, (frame_name, sort_rank)). An unknown prefix prints a warning
+        and returns ("unknown frame", 8).
+    """
+    prefix =record["location"].split(".")[0]
     if prefix not in FRAMES:
         print(f"  ! unknown location prefix: {prefix}", file=sys.stderr)
         return prefix, ("unknown frame", 8)
@@ -66,6 +60,16 @@ def frame_of(record):
 
 
 def build(path, include_structural=False):
+    """Assign every mounted part to a frame, rail row and position.
+
+    Args:
+        path: Cleaned schematic JSON.
+        include_structural: Keep rails and ducts as items if True.
+
+    Returns:
+        (items, orphans): item dicts in walking order, and (frame_name, record)
+        pairs for parts at no rail height (reported, never guessed).
+    """
     with open(path) as handle:
         records = json.load(handle)["components"]
 
@@ -117,7 +121,20 @@ def build(path, include_structural=False):
 
 
 def _emit_row(frame_name, row_number, row, shared_tags, rail_tag=None):
-    """One rail's worth of items, ordered left to right."""
+    """Turn one rail's parts into items, ordered left to right.
+
+    Terminals that share a tag collapse into a single "strip" item.
+
+    Args:
+        frame_name: Frame the rail is in.
+        row_number: Rail number, 1 = top.
+        row: Records on this rail.
+        shared_tags: Tags used by more than one record (terminal strips).
+        rail_tag: The rail's own tag, e.g. "-D1", if known.
+
+    Returns:
+        Item dicts with frame, row, position, tag, kind, detail, rail, spoken.
+    """
     out = []
     row = sorted(row, key=lambda r: r["position"]["x"])
     seen_strips = set()
@@ -152,6 +169,13 @@ def _emit_row(frame_name, row_number, row, shared_tags, rail_tag=None):
 
 
 def show(items, orphans, include_structural):
+    """Print the checklist as a tick-box sheet grouped by frame and row.
+
+    Args:
+        items: Item dicts from build().
+        orphans: Parts at no rail height, from build().
+        include_structural: Whether rails/ducts were kept (shown in the footer).
+    """
     current = None
     for item in items:
         header = (item["frame"], item["row"])
@@ -187,6 +211,7 @@ def show(items, orphans, include_structural):
 
 
 def main():
+    """CLI: build the walking order, print it, and optionally write a CSV."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", default=DATA)
     parser.add_argument("--csv")

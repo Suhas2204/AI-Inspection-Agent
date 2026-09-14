@@ -1,12 +1,9 @@
 """Block 3 (code half): join the walking order with the advisor's bands.
 
-Positions come from Block 2 and are regenerated freely. Bands come from the
-advisor session and are NOT regenerated -- they are decisions, keyed by type.
-This module joins them and sorts band first, physical position within band.
-
-An item with no band is a hard failure. It is never defaulted to 4: a silent
-default would put an unreviewed device at the bottom of the walk, and nobody
-would ever notice.
+- Positions (data/walking_order.csv) come from Block 2 and can be regenerated.
+- Bands (data/bands.csv) are advisor decisions -- never regenerated.
+- Items are sorted band first, then physical position within the band.
+- An item with no band is a hard failure, never silently defaulted to 4.
 """
 
 from __future__ import annotations
@@ -24,6 +21,18 @@ FRAME_ORDER = ["left frame", "left side panel", "right frame",
 
 @dataclass(frozen=True)
 class Item:
+    """One checklist entry: something the trainee is sent to read.
+
+    Attributes:
+        tag: Device or strip tag, e.g. "-8F7" or "-X4".
+        kind: "device" or "strip".
+        detail: Device type, or e.g. "6 terminals" for a strip.
+        spoken: Location-only prompt the trainee hears.
+        frame: Frame name, e.g. "left frame".
+        row: Rail row within the frame (1 = top).
+        position: Position along the row, left to right.
+        band: Priority band from bands.csv (lower = earlier).
+    """
     tag: str
     kind: str            # 'device' | 'strip'
     detail: str          # device type, or '6 terminals'
@@ -35,6 +44,11 @@ class Item:
 
     @property
     def walk_key(self):
+        """Sort key for physical walking order.
+
+        Returns:
+            (frame_rank, row, position). Unknown frames sort last.
+        """
         try:
             frame_rank = FRAME_ORDER.index(self.frame)
         except ValueError:
@@ -43,7 +57,19 @@ class Item:
 
 
 def load_bands(path: Path = BANDS) -> dict[str, int]:
-    """key -> band. Device rows key on type, strip rows key on tag."""
+    """Load the advisor's bands from bands.csv.
+
+    Device rows are keyed by type, strip rows by tag.
+
+    Args:
+        path: bands.csv location.
+
+    Returns:
+        Dict key -> band number.
+
+    Raises:
+        SystemExit: If the file is missing or any row has no band.
+    """
     if not path.exists():
         raise SystemExit(
             f"{path} not found. Block 3 is not done: generate the 29 rows, "
@@ -68,6 +94,18 @@ def load_bands(path: Path = BANDS) -> dict[str, int]:
 
 def load_checklist(walking: Path = WALKING_ORDER,
                    bands_path: Path = BANDS) -> list[Item]:
+    """Build the ordered checklist: walking order joined with bands.
+
+    Args:
+        walking: walking_order.csv from Block 2.
+        bands_path: bands.csv from the advisor session.
+
+    Returns:
+        Items sorted by band, then walking order.
+
+    Raises:
+        SystemExit: If any item has no band (never defaulted).
+    """
     bands = load_bands(bands_path)
     items, missing = [], []
 

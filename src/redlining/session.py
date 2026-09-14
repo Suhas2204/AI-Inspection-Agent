@@ -1,31 +1,27 @@
 """Block 7: walk the checklist and run the inspection.
 
-The sequence is fixed and it is the point of the whole design:
+- Fixed sequence per item: prompt (location only) -> commit -> adjudicate
+  -> reveal. The expected value is never shown before the verdict is fixed;
+  any hint destroys the confirmation-bias protection of CONTEXT §7.
+- Re-asks are silent ("please read it again"), at most two. Then the item is
+  flagged and the run moves on. The run never stops.
+- Input is pluggable: typed (default), scripted smoke test, or live microphone.
 
-    prompt (location only) -> commit -> adjudicate -> reveal
-
-The expected value is not in scope while the read is being taken. It is fetched
-only after the verdict is fixed. Any hint before commit destroys the
-confirmation-bias protection that CONTEXT §7 exists to provide.
-
-Re-asks are silent: "please read it again", never echoing what was heard.
-At most two. Then the item is flagged and the run moves on. The run never stops.
-
-Input is pluggable. The default reads typed text so the logic can be exercised
-without a microphone; swap in a recorder for the real run and fill audio_path.
-
-    uv run python -m redlining.session
-    uv run python -m redlining.session --dry-run     # scripted, no keyboard
+Run:
+    uv run python -m redlining.session                 # typed input
+    uv run python -m redlining.session --scripted      # smoke test, no keyboard
+    uv run python -m redlining.session --live --kind strip --model small --speak
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .adjudicate import Adjudicator, ABSTAIN, compact
+from .adjudicate import Adjudicator, ABSTAIN
 from .checklist import Item, load_checklist
 from .normalise import normalise_part, normalise_rating, normalise_tag
 from .report import Annotation, Attempt, RunLog
@@ -39,7 +35,16 @@ TAG_MODE_WARNING = (
 
 @dataclass
 class Read:
-    """One spoken attempt, before anything has been judged."""
+    """One spoken attempt, before anything has been judged.
+
+    Attributes:
+        tag_raw: Raw transcript of a spoken tag.
+        part_raw: Raw transcript of a spoken part number.
+        rating_raw: Raw transcript of a spoken rating line.
+        counts_raw: Raw transcript of spoken strip counts.
+        confidence: ASR confidence (0-1), if known.
+        audio_path: Where the recording is stored, if any.
+    """
     tag_raw: str = ""
     part_raw: str = ""
     rating_raw: str = ""
@@ -49,17 +54,32 @@ class Read:
 
     @property
     def raw(self) -> str:
+        """All non-empty raw fields joined with " | "."""
         return " | ".join(x for x in (self.tag_raw, self.part_raw,
                                       self.rating_raw, self.counts_raw) if x)
 
 
 class KeyboardInput:
-    """Stand-in for the microphone. Same interface a recorder would expose."""
+    """Typed stand-in for the microphone. Same interface as LiveInput."""
 
     def __init__(self, mode: str = "tag"):
+        """Set up typed input.
+
+        Args:
+            mode: "tag" to ask for the tag only, "part" for part number + rating line.
+        """
         self.mode = mode
 
     def device(self, prompt: str, attempt: int) -> Read:
+        """Ask for one device read on the keyboard.
+
+        Args:
+            prompt: Location-only prompt, shown on the first attempt.
+            attempt: 1 for the first try; later tries get a silent re-ask.
+
+        Returns:
+            Read with tag_raw (tag mode) or part_raw + rating_raw (part mode).
+        """
         if attempt == 1:
             print(f"\n  {prompt}")
         else:
@@ -71,6 +91,15 @@ class KeyboardInput:
         return Read(part_raw=part, rating_raw=rating)
 
     def strip(self, prompt: str, attempt: int) -> Read:
+        """Ask for one strip's terminal counts on the keyboard.
+
+        Args:
+            prompt: Location-only prompt, shown on the first attempt.
+            attempt: 1 for the first try; later tries get a silent re-ask.
+
+        Returns:
+            Read with counts_raw, e.g. "N 8 L 8 PE 8".
+        """
         if attempt == 1:
             print(f"\n  {prompt}")
         else:
@@ -85,31 +114,60 @@ WORD_DIGITS = {"ZERO": 0, "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
                "FIFTEEN": 15, "SIXTEEN": 16, "SEVENTEEN": 17, "EIGHTEEN": 18,
                "NINETEEN": 19, "TWENTY": 20}
 FUNCTIONS = {"N", "L", "PE", "BRACKET"}
+GLUED_RE = re.compile(r"[A-Z]+|\d+")
 
 
 def parse_counts(text: str) -> dict:
-    """'N 8 L 8 PE 8' -> {'N':8,'L':8,'PE':8}.
+    """Turn spoken strip counts into a function -> count dict.
 
-    Spoken counts arrive as words ('N eight L eight'), so number words are
-    accepted too. Only known function names are treated as keys, so stray
-    words in a transcript do not invent a function.
+    - Accepts digits or number words ("N eight").
+    - Splits glued tokens ("3L", "N1").
+    - The count may come before or after its function ("3 L" or "L 3").
+    - Only known functions (N, L, PE, BRACKET) become keys.
+
+    Args:
+        text: Raw counts transcript, e.g. "N 8 L 8 PE 8".
+
+    Returns:
+        Dict such as {"N": 8, "L": 8, "PE": 8}. Empty if nothing parsed.
     """
-    toks = text.replace(",", " ").replace(":", " ").upper().split()
-    out, key = {}, None
+    raw = text.replace(",", " ").replace(":", " ").upper().split()
+    toks: list[str] = []
+    for t in raw:
+        toks.extend(GLUED_RE.findall(t) or [t])
+
+    out: dict = {}
+    pending_key = pending_value = None
     for t in toks:
         value = int(t) if t.isdigit() else WORD_DIGITS.get(t)
-        if value is not None and key:
-            out[key] = value
-            key = None
-        elif t in FUNCTIONS:
-            key = t
+        if t in FUNCTIONS:
+            if pending_value is not None:
+                out[t] = pending_value
+                pending_value = None
+            else:
+                pending_key = t
+        elif value is not None:
+            if pending_key is not None:
+                out[pending_key] = value
+                pending_key = None
+            else:
+                pending_value = value
     return out
 
 
 def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
         max_reasks: int = MAX_REASKS, mode: str = "tag") -> None:
-    """mode='part': part number + rating line (CONTEXT §7).
-    mode='tag' : the tag only -- simpler, and blind to a wrong part."""
+    """Walk every item (prompt, commit, adjudicate, log), then write the report.
+
+    Args:
+        items: Checklist items in walking order.
+        adj: Adjudicator for the cabinet.
+        source: Input with .device(prompt, attempt) and .strip(prompt, attempt).
+        log: RunLog that receives every attempt.
+        max_reasks: Silent re-asks allowed after an abstain.
+        mode: "part" = part number + rating line (CONTEXT §7);
+            "tag" = tag only -- simpler, and blind to a wrong part.
+    """
     started = time.monotonic()
 
     for item in items:
@@ -168,7 +226,13 @@ def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
 
 
 def triage(log: RunLog) -> None:
-    """End-of-run flag queue. Annotate only -- there is no way to close a flag."""
+    """End-of-run flag queue: let the trainee annotate each flag.
+
+    Flags can only be annotated, never closed -- every flag reaches the reviewer.
+
+    Args:
+        log: RunLog whose flags are shown and annotated.
+    """
     flags = log.flags
     print(f"\n{len(flags)} flag(s). You may add an account of each. "
           "You cannot close one; every flag reaches the reviewer.")
@@ -184,28 +248,52 @@ def triage(log: RunLog) -> None:
 
 
 class ScriptedInput:
-    """Feeds the schematic's own correct values back in. Exercises the whole
-    machinery without a keyboard or a microphone.
+    """Smoke-test input that feeds the schematic's own correct values back in.
 
-    This is a smoke test, NOT an evaluation. Nothing is ever wrong, so it can
-    produce no detection rate. Block 9 is where real faults get planted."""
+    Smoke test, NOT an evaluation: nothing is ever wrong, so it gives no
+    detection rate. Block 9 is where real faults get planted.
+    """
 
     _tag = ""
 
     def __init__(self, adj: Adjudicator):
+        """Keep the adjudicator to look up correct values.
+
+        Args:
+            adj: Adjudicator whose schematic supplies the answers.
+        """
         self.adj = adj
 
     def device(self, prompt: str, attempt: int) -> Read:
+        """Return the correct tag, part number and rating for the current item.
+
+        Args:
+            prompt: Ignored.
+            attempt: Ignored.
+
+        Returns:
+            Read filled from the schematic record of the current tag.
+        """
         rec = self.adj.devices[self._tag]
         return Read(tag_raw=self._tag, part_raw=rec["order_reference"],
                     rating_raw=rec["type"])
 
     def strip(self, prompt: str, attempt: int) -> Read:
+        """Return the correct terminal counts for the current strip.
+
+        Args:
+            prompt: Ignored.
+            attempt: Ignored.
+
+        Returns:
+            Read with counts_raw built from the schematic, e.g. "N 8 L 8 PE 8".
+        """
         counts = self.adj.expected_counts(self._tag)
         return Read(counts_raw=" ".join(f"{k} {v}" for k, v in counts.items()))
 
 
 def main() -> None:
+    """CLI: parse flags, build checklist and input source, run, triage, report."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--export", default="data/schematic.cleaned.json")
     ap.add_argument("--limit", type=int, default=None,
@@ -222,10 +310,14 @@ def main() -> None:
     ap.add_argument("--mode", choices=["part", "tag"], default="tag",
                     help="'part': part number + rating line. "
                          "'tag': tag only -- cannot detect a wrong part")
+    ap.add_argument("--kind", choices=["device", "strip", "all"], default="all",
+                    help="restrict the run to one item kind")
     args = ap.parse_args()
 
     adj = Adjudicator.from_export(args.export)
     items = load_checklist()
+    if args.kind != "all":
+        items = [i for i in items if i.kind == args.kind]
     if args.limit:
         items = items[: args.limit]
 

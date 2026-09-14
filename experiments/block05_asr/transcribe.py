@@ -1,16 +1,15 @@
 """Block 5: transcribe recorded labels with two engines and dump the raw text.
 
-This script does exactly one thing: it turns audio into text, twice, and writes
-both results down verbatim. It does NOT normalise, score, correct, or compare
-against the schematic. Those are Blocks 4 and 6. Keeping them out of here is the
-whole point -- see CONTEXT.md §7 on laundering.
+- Engines: OpenAI Whisper API and local faster-whisper. Output is verbatim.
+- Does NOT normalise, score, correct or compare -- that is Blocks 4 and 6
+  (see CONTEXT.md §7 on laundering).
 
 Run:
     export OPENAI_API_KEY=...
     uv run python experiments/block05_asr/transcribe.py experiments/block05_asr/audio/
 
-Outputs, next to the audio:
-    transcripts.json   full result, segments with timestamps, both engines
+Outputs (next to the audio, or in --out):
+    transcripts.json   full result with segment timestamps, both engines
     transcripts.csv    one row per segment, for marking right/wrong by hand
 
 Install:
@@ -28,6 +27,17 @@ AUDIO_SUFFIXES = {".m4a", ".mp3", ".wav", ".flac", ".ogg", ".mp4", ".mpga", ".we
 
 
 def find_audio(target: Path):
+    """Collect the audio files to transcribe.
+
+    Args:
+        target: An audio file, or a directory searched recursively.
+
+    Returns:
+        Sorted list of audio paths.
+
+    Raises:
+        SystemExit: If a directory contains no audio.
+    """
     if target.is_file():
         return [target]
     files = sorted(p for p in target.rglob("*") if p.suffix.lower() in AUDIO_SUFFIXES)
@@ -37,7 +47,18 @@ def find_audio(target: Path):
 
 
 def transcribe_api(path: Path, language: str):
-    """Whisper API. Returns (full_text, segments) or raises."""
+    """Transcribe one file with the OpenAI Whisper API (temperature 0, no prompt).
+
+    Args:
+        path: Audio file.
+        language: Language code, e.g. "en".
+
+    Returns:
+        (full_text, segments), each segment {"start", "end", "text"}.
+
+    Raises:
+        Exception: Any API error; the caller records it.
+    """
     from openai import OpenAI
 
     client = OpenAI()
@@ -62,7 +83,19 @@ def transcribe_api(path: Path, language: str):
 
 
 def transcribe_local(path: Path, language: str, model_size: str):
-    """Local faster-whisper. Returns (full_text, segments) or raises."""
+    """Transcribe one file with local faster-whisper.
+
+    Args:
+        path: Audio file.
+        language: Language code, e.g. "en".
+        model_size: faster-whisper size, e.g. "large-v3".
+
+    Returns:
+        (full_text, segments), each segment {"start", "end", "text"}.
+
+    Raises:
+        Exception: Any model error; the caller records it.
+    """
     from faster_whisper import WhisperModel
 
     model = WhisperModel(model_size, device="auto", compute_type="int8")
@@ -80,6 +113,7 @@ def transcribe_local(path: Path, language: str, model_size: str):
 
 
 def main():
+    """CLI: transcribe every file with both engines, then write JSON and a scoring CSV."""
     ap = argparse.ArgumentParser()
     ap.add_argument("target", type=Path, help="audio file or directory")
     ap.add_argument("--language", default="en")

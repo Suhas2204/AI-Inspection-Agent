@@ -1,20 +1,19 @@
 """Block 6: decide whether a read agrees with the schematic.
 
-Takes normalised strings. No audio enters this module. No network, no model.
-Returns exactly one of four outcomes, each with a reason a reviewer can act on:
-
+- Input: normalised strings only. No audio, no network, no model.
+- Output: a Verdict with exactly one of four outcomes plus a reason:
     match             the read is what the schematic expects here
-    mismatch          the read is a different real thing -- a wrong part fitted
-    not_in_schematic  the read names nothing in this cabinet -- probably misheard
+    mismatch          a different real part -- a wrong part fitted
+    not_in_schematic  names nothing in this cabinet -- probably misheard
     abstain           not enough to decide; the runner re-asks
+- Key rule (CONTEXT.md §7, BLOCK_GUIDE Block 6): an unknown part number NEVER
+  becomes its nearest legal neighbour. Edit distance explains an abstain; it
+  never repairs a read.
 
-The rule that matters (CONTEXT.md §7, BLOCK_GUIDE Block 6): a part number that
-matches no schematic entry NEVER becomes its nearest legal neighbour. Edit
-distance is used to *explain* an abstain, never to *repair* a read.
-
+Example:
     from redlining.adjudicate import Adjudicator
     adj = Adjudicator.from_export("data/schematic.cleaned.json")
-    adj.judge_device("-8F7", part="A9F03310", rating="IC60NB10")
+    adj.judge_device("-8F7", part="A9F03110", rating="C60N1P10AB")
 """
 
 from __future__ import annotations
@@ -46,7 +45,15 @@ COUNT_END_BRACKETS = True
 
 # Terminal function, derived from the type string per CONTEXT §7.
 def terminal_functions(type_str: str) -> Counter:
-    """'AITB 2.5 BB N-L-PE MC' -> {N:1, L:1, PE:1}  ·  'WPE 35N' -> {PE:1}"""
+    """Count the terminal functions encoded in a terminal type string.
+
+    Args:
+        type_str: Terminal type, e.g. "AITB 2.5 BB N-L-PE MC" or "WPE 35N".
+
+    Returns:
+        Counter of functions, e.g. {"N": 1, "L": 1, "PE": 1}. "ZEW" end
+        brackets count as "BRACKET"; unrecognised types as "UNKNOWN".
+    """
     t = type_str.upper()
     if t.startswith("WPE"):
         return Counter({"PE": 1})
@@ -73,6 +80,15 @@ except ImportError:                       # running the file directly
 
 
 def edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance between two strings.
+
+    Args:
+        a: First string.
+        b: Second string.
+
+    Returns:
+        Minimum number of single-character inserts, deletes or substitutions.
+    """
     if a == b:
         return 0
     prev = list(range(len(b) + 1))
@@ -86,6 +102,15 @@ def edit_distance(a: str, b: str) -> int:
 
 @dataclass
 class Verdict:
+    """The adjudicator's decision on one item.
+
+    Attributes:
+        outcome: One of MATCH, MISMATCH, NOT_IN_SCHEMATIC, ABSTAIN.
+        reason: Plain-language explanation a reviewer can act on.
+        item: The tag that was judged.
+        read: What was read (normalised values).
+        expected: What the schematic expects (empty for unknown items).
+    """
     outcome: str
     reason: str
     item: str
@@ -93,11 +118,25 @@ class Verdict:
     expected: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:
+        """Short form: <outcome item: reason>."""
         return f"<{self.outcome} {self.item}: {self.reason}>"
 
 
 class Adjudicator:
+    """Judges device, tag and strip reads against one cabinet's schematic.
+
+    Attributes:
+        devices: Tag -> component record, for everything that is not a strip.
+        terminals: Component records belonging to strips -X1..-X8.
+        legal_parts: Every compacted part number in the cabinet (membership only).
+    """
+
     def __init__(self, components: list[dict]):
+        """Index the cleaned components.
+
+        Args:
+            components: The "components" list from the cleaned schematic export.
+        """
         strips = set(STRIP_TAGS)
         self.devices = {r["designation"]: r for r in components
                         if r["designation"] not in strips}
@@ -108,6 +147,14 @@ class Adjudicator:
 
     @classmethod
     def from_export(cls, path: str | Path) -> "Adjudicator":
+        """Build an Adjudicator from a cleaned schematic JSON file.
+
+        Args:
+            path: Path to e.g. data/schematic.cleaned.json.
+
+        Returns:
+            A ready Adjudicator.
+        """
         with open(path, encoding="utf-8") as fh:
             return cls(json.load(fh)["components"])
 
@@ -116,6 +163,21 @@ class Adjudicator:
                      rating: str | None = None,
                      part_well_formed: bool = True,
                      rating_well_formed: bool = True) -> Verdict:
+        """Judge a device read (part number and/or rating line).
+
+        Check order: unknown tag -> nothing read -> malformed -> label with no
+        printed part -> part not in cabinet -> part vs rating cross-check.
+
+        Args:
+            tag: Device tag, e.g. "-8F7".
+            part: Normalised part number that was read, or None.
+            rating: Normalised rating line that was read, or None.
+            part_well_formed: False if the normaliser rejected the part's shape.
+            rating_well_formed: False if the normaliser rejected the rating's shape.
+
+        Returns:
+            Verdict with one of the four outcomes.
+        """
         rec = self.devices.get(tag)
         if rec is None:
             return Verdict(ABSTAIN, f"no device {tag} in the schematic", tag)
@@ -218,12 +280,19 @@ class Adjudicator:
 
     def judge_tag(self, tag: str, read_tag: str | None,
                   well_formed: bool = True) -> Verdict:
-        """Tag-only mode. Compares the spoken tag against the tag expected here.
+        """Judge a spoken tag against the tag expected at this location.
 
-        Scope, stated plainly so the thesis does not overclaim: this verifies
-        that the trainee is at the right place and that the label there is the
-        right label. It cannot detect a wrong part fitted under a correct
-        label, because the tag does not change when the device does.
+        Limit: confirms right place + right label only. It cannot detect a
+        wrong part fitted under a correct label (the tag doesn't change).
+
+        Args:
+            tag: Tag expected at this location, e.g. "-8F7".
+            read_tag: Normalised tag that was read, or None.
+            well_formed: False if the normaliser rejected the tag's shape.
+
+        Returns:
+            Verdict: MATCH; MISMATCH (a real tag from elsewhere); ABSTAIN
+            (nothing read, malformed, or 1 character off); NOT_IN_SCHEMATIC.
         """
         expected = {"tag": tag}
         read = {"tag": (read_tag or "").upper()}
@@ -256,6 +325,15 @@ class Adjudicator:
 
     # ----------------------------------------------------------------- strips
     def expected_counts(self, tag: str) -> Counter:
+        """Expected terminal count per function for one strip.
+
+        Args:
+            tag: Strip tag, e.g. "-X4".
+
+        Returns:
+            Counter such as {"N": 8, "L": 8, "PE": 8, "BRACKET": 1}. End
+            brackets are included only when COUNT_END_BRACKETS is True.
+        """
         total = Counter()
         for r in self.terminals:
             if r["designation"] != tag:
@@ -266,6 +344,19 @@ class Adjudicator:
         return total
 
     def judge_strip(self, tag: str, counts: dict) -> Verdict:
+        """Check spoken terminal counts against the schematic.
+
+        Note: a terminal swapped for another of the same function is invisible
+        to this check (CONTEXT §7).
+
+        Args:
+            tag: Strip tag, e.g. "-X4".
+            counts: Function -> count, e.g. {"N": 8, "L": 8}.
+
+        Returns:
+            Verdict: MATCH if every count agrees, MISMATCH listing the
+            differences, ABSTAIN if the strip is unknown or no counts given.
+        """
         if tag not in STRIP_TAGS:
             return Verdict(ABSTAIN, f"no strip {tag} in the schematic", tag)
 

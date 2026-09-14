@@ -6,19 +6,15 @@
     ----
     173  core  ->  92 devices + 81 terminals in 8 strips  ->  100 checklist items
 
-Nothing is dropped silently. Every removed record is counted, given a reason,
-and written to data/dropped.csv so the drop is auditable rather than trusted.
+- Nothing is dropped silently: every removed record gets a reason in
+  data/dropped.csv, so the drop is auditable.
+- WARNING: FILLER_TERMS is a guess from BLOCK_GUIDE, not from the export.
+  Read data/dropped.csv and confirm nothing real was removed.
 
 Run:
     uv run python -m redlining.loader
-    uv run python -m redlining.loader --verify    # also diff against the existing
-                                                  # cleaned file, if there is one
-
-WARNING -- FILLER_TERMS below is the one part of this file that is a guess.
-This module was written from BLOCK_GUIDE's description of the filler parts, not
-from the raw export. Run it, read data/dropped.csv, and confirm that all 42
-dropped records really are blanking covers, wire ridges, spacers and insulators
--- and that nothing real went with them. Correct the terms here if not.
+    uv run python -m redlining.loader --verify    # diff against the existing cleaned file
+    uv run python -m redlining.loader --force     # write output even if the gate fails
 """
 
 from __future__ import annotations
@@ -62,10 +58,26 @@ WRAPPER_TERM = "kombination"
 
 
 def norm(s) -> str:
+    """Trim and lowercase a value for matching.
+
+    Args:
+        s: A string or None.
+
+    Returns:
+        Normalised string ("" for None).
+    """
     return (s or "").strip().lower()
 
 
 def is_filler(rec: dict) -> str | None:
+    """Check whether a record is mechanical filler (covers, spacers, ...).
+
+    Args:
+        rec: Raw component record.
+
+    Returns:
+        Drop reason if a FILLER_TERMS entry is in its type or designation, else None.
+    """
     haystack = f"{norm(rec.get('type'))} {norm(rec.get('designation'))}"
     for term in FILLER_TERMS:
         if term in haystack:
@@ -74,6 +86,14 @@ def is_filler(rec: dict) -> str | None:
 
 
 def is_wrapper(rec: dict) -> str | None:
+    """Check whether a record is a '- Kombination' assembly wrapper.
+
+    Args:
+        rec: Raw component record.
+
+    Returns:
+        Drop reason if it is a wrapper, else None.
+    """
     if WRAPPER_TERM in norm(rec.get("designation")) or \
        WRAPPER_TERM in norm(rec.get("type")):
         return "assembly wrapper ('- Kombination')"
@@ -81,6 +101,18 @@ def is_wrapper(rec: dict) -> str | None:
 
 
 def load_raw(path: Path) -> tuple[dict, list[dict]]:
+    """Read the raw schematic export.
+
+    Args:
+        path: Raw JSON export, e.g. data/schematic.json.
+
+    Returns:
+        (metadata, records): the top-level dict ({} if the file is a bare
+        list) and the component records.
+
+    Raises:
+        SystemExit: If the file does not exist.
+    """
     if not path.exists():
         sys.exit(f"{path} not found. Put the raw export in data/ first.")
     with open(path, encoding="utf-8") as fh:
@@ -90,6 +122,16 @@ def load_raw(path: Path) -> tuple[dict, list[dict]]:
 
 
 def clean(records: list[dict]) -> tuple[list[dict], list[tuple[dict, str]]]:
+    """Split records into core components and dropped ones.
+
+    Checked in order: wrapper -> empty part number -> filler.
+
+    Args:
+        records: Raw component records.
+
+    Returns:
+        (core, dropped), where dropped is a list of (record, reason).
+    """
     core, dropped = [], []
 
     for rec in records:
@@ -107,6 +149,15 @@ def clean(records: list[dict]) -> tuple[list[dict], list[tuple[dict, str]]]:
 
 
 def summarise(core: list[dict]) -> dict:
+    """Count what the cleaned core set contains.
+
+    Args:
+        core: Cleaned component records.
+
+    Returns:
+        Dict of counts: core, devices, unique_device_tags, terminals, strips,
+        part_numbers, device_types, checklist_items.
+    """
     strips = set(STRIP_TAGS)
     devices = [r for r in core if r["designation"] not in strips]
     terminals = [r for r in core if r["designation"] in strips]
@@ -124,6 +175,12 @@ def summarise(core: list[dict]) -> dict:
 
 
 def write_dropped(dropped: list[tuple[dict, str]], path: Path = DROPPED) -> None:
+    """Write every dropped record and its reason to CSV for auditing.
+
+    Args:
+        dropped: (record, reason) pairs from clean().
+        path: Output CSV.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
@@ -136,6 +193,16 @@ def write_dropped(dropped: list[tuple[dict, str]], path: Path = DROPPED) -> None
 
 
 def check_gate(raw_n: int, core: list[dict], dropped: list) -> list[str]:
+    """Compare the cleaned counts with the expected gate values.
+
+    Args:
+        raw_n: Number of raw records read.
+        core: Cleaned component records.
+        dropped: Dropped records (currently not used in the check).
+
+    Returns:
+        One message per count that is off. Empty list = gate passed.
+    """
     s = summarise(core)
     problems = []
     for name, got, want in [
@@ -154,6 +221,7 @@ def check_gate(raw_n: int, core: list[dict], dropped: list) -> list[str]:
 
 
 def main() -> None:
+    """CLI: clean the export, write dropped.csv, check the gate, write the output."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw", type=Path, default=RAW)
     ap.add_argument("--out", type=Path, default=OUT)

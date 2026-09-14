@@ -1,44 +1,16 @@
-"""Block 9, Track 2 -- the confusability map.
+"""Block 9, Track 2: the confusability map for spoken device tags.
 
-What this answers, before a single run is scored:
+- Question: which tags are one misheard character away from ANOTHER REAL tag?
+  That misread is not caught -- it returns a confident mismatch (or match)
+  instead of not-in-schematic. It is the ceiling on voice-only inspection here.
+- A property of the schematic, not of Whisper: no audio, run or model needed.
+- Reports pairs at edit distance 1, and marks pairs whose differing characters
+  sound alike ("phonetic") or sit next to each other on a rail ("adjacent").
+- Says what COULD collide, not what does. Track 1 (ASR accuracy) measures that.
 
-    Which device tags are close enough that one misheard character turns a
-    correct read into a DIFFERENT TAG THAT ALSO EXISTS in this cabinet?
-
-That is the dangerous class. A misread that produces nonsense is caught -- the
-adjudicator returns not-in-schematic and the trainee is asked again. A misread
-that produces another legal tag is NOT caught: it comes back as a confident
-mismatch, or, if the neighbour happens to be the item under inspection, as a
-confident match. Either way it looks like a verdict rather than an error, and
-nothing downstream can tell the difference.
-
-So this is the ceiling on voice-only inspection FOR THIS CABINET. It is a
-property of the schematic, not of Whisper, and it needs no audio, no run and no
-model to compute. It is also the evidence-based version of the Phase 2 camera
-argument: the camera is not wanted because cameras are nice, it is wanted
-because N pairs here are provably indistinguishable by ear.
-
-Two distances are reported:
-
-  * edit distance 1 -- one character inserted, deleted or substituted.
-  * phonetic        -- characters that are confusable when SPOKEN, which edit
-                       distance alone does not model. "F" and "S", "B" and "D",
-                       "13" and "30". A pair at edit distance 1 whose differing
-                       characters are also phonetically close is worse than one
-                       that differs in an unambiguous digit.
-
-Adjacency matters too. A twin on the far side of the cabinet is a mismatch the
-trainee will notice. A twin at the next position on the same rail is one the
-system will silently accept, because the trainee's eye and the recogniser can
-slip together. Adjacent pairs are therefore counted separately.
-
-Usage:
-    python experiments/block09_eval/confusability.py
-    python experiments/block09_eval/confusability.py --csv data/confusability.csv
-
-Nothing here is verified against speech. It says what COULD collide, not what
-does. Track 1 (ASR character accuracy) is what tells you whether these
-collisions actually happen.
+Run:
+    uv run python experiments/block05_asr/confusability.py
+    uv run python experiments/block05_asr/confusability.py --csv data/confusability.csv
 """
 
 from __future__ import annotations
@@ -76,14 +48,30 @@ PHONETIC_GROUPS = [
 
 
 def phonetically_close(a: str, b: str) -> bool:
-    """True if a and b are single characters that collide when spoken."""
+    """Check whether two single characters sound alike when spoken.
+
+    Args:
+        a: One character.
+        b: Another character.
+
+    Returns:
+        True if they are equal or in the same PHONETIC_GROUPS set.
+    """
     if a == b:
         return True
     return any(a in group and b in group for group in PHONETIC_GROUPS)
 
 
 def edit_distance(a: str, b: str) -> int:
-    """Plain Levenshtein. Short strings, so the naive version is fine."""
+    """Plain Levenshtein distance (the naive version is fine for short tags).
+
+    Args:
+        a: First string.
+        b: Second string.
+
+    Returns:
+        Edit distance, or 99 if the lengths differ by more than 2.
+    """
     if abs(len(a) - len(b)) > 2:
         return 99
     previous = list(range(len(b) + 1))
@@ -98,10 +86,15 @@ def edit_distance(a: str, b: str) -> int:
 
 
 def differing_chars(a: str, b: str):
-    """The single substituted pair, if the difference IS a substitution.
+    """Return the one substituted character pair between two strings.
 
-    Returns None for insertions and deletions, where there is no pair to
-    compare phonetically.
+    Args:
+        a: First string.
+        b: Second string.
+
+    Returns:
+        (char_a, char_b) if exactly one position differs, else None. Also None
+        for insertions/deletions, which have no pair to compare phonetically.
     """
     if len(a) != len(b):
         return None
@@ -110,8 +103,17 @@ def differing_chars(a: str, b: str):
 
 
 def load_device_tags(path: str) -> list[str]:
-    """The 62 spoken device tags. Terminals share a strip tag and are read as
-    counts, not tags, so they are excluded -- there is no tag to mishear."""
+    """Load the spoken device tags (62 in this cabinet).
+
+    Strip terminals share a tag and are read as counts, so they are excluded,
+    as are structural parts.
+
+    Args:
+        path: Cleaned schematic JSON.
+
+    Returns:
+        Sorted list of unique device tags.
+    """
     records = json.load(open(path))["components"]
     counts = Counter(r["designation"] for r in records)
     return sorted({r["designation"] for r in records
@@ -120,10 +122,16 @@ def load_device_tags(path: str) -> list[str]:
 
 
 def load_adjacency(path: str) -> dict[str, set[str]]:
-    """Which tags sit next to each other in the order the trainee walks.
+    """Find which device tags are neighbours on the same rail in walking order.
 
-    Neighbours on the same rail are what matter: that is where a slip of the
-    eye and a slip of the recogniser can agree with each other.
+    Same-rail neighbours matter most: a slip of the eye and a slip of the
+    recogniser can agree there.
+
+    Args:
+        path: walking_order.csv.
+
+    Returns:
+        Dict tag -> set of neighbouring tags. Empty if the file is missing.
     """
     neighbours: dict[str, set[str]] = defaultdict(set)
     try:
@@ -142,7 +150,17 @@ def load_adjacency(path: str) -> dict[str, set[str]]:
 
 
 def build(data_path: str, order_path: str):
-    tags = load_device_tags(data_path)
+    """Find every pair of device tags at edit distance 1.
+
+    Args:
+        data_path: Cleaned schematic JSON.
+        order_path: walking_order.csv, for adjacency.
+
+    Returns:
+        (tags, pairs): all tags, and one dict per pair with tag_a, tag_b,
+        edit_distance, differs, phonetic, adjacent.
+    """
+    tags =load_device_tags(data_path)
     neighbours = load_adjacency(order_path)
     pairs = []
 
@@ -164,7 +182,13 @@ def build(data_path: str, order_path: str):
 
 
 def report(tags, pairs) -> None:
-    at_risk = {t for p in pairs for t in (p["tag_a"], p["tag_b"])}
+    """Print the headline numbers and the worst-case pairs.
+
+    Args:
+        tags: All spoken device tags.
+        pairs: Pair dicts from build().
+    """
+    at_risk ={t for p in pairs for t in (p["tag_a"], p["tag_b"])}
     phonetic = [p for p in pairs if p["phonetic"]]
     adjacent = [p for p in pairs if p["adjacent"]]
     both = [p for p in pairs if p["phonetic"] and p["adjacent"]]
@@ -192,6 +216,7 @@ def report(tags, pairs) -> None:
 
 
 def main() -> None:
+    """CLI: build the confusability map, print it, and optionally write a CSV."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", default=DATA)
     parser.add_argument("--order", default=ORDER)

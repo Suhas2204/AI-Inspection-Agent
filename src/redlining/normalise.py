@@ -1,21 +1,17 @@
 """Block 4: turn a raw ASR transcript into a canonical string.
 
-Rules only. No model, no network, no API key, no fuzzy matching against the
-legal part-number set. If a read comes out malformed, this module says so and
-hands the malformed string onward -- correcting it here would launder exactly
-the defect Block 9 plants. See BLOCK_GUIDE Block 4, and CONTEXT.md §7.
+- Rules only: no model, no network, no API key. Deterministic.
+- No fuzzy matching against the legal part-number set. A malformed read is
+  marked malformed and passed on -- correcting it would launder the defect
+  Block 9 plants (BLOCK_GUIDE Block 4, CONTEXT.md §7).
+- WARNING: the word lists are a starting point. Extend them from real
+  transcripts (transcripts.csv), not from imagination.
 
-Deterministic: same input, same output, always.
-
+Example:
     from redlining.normalise import normalise_part, normalise_rating
 
     normalise_part("a nine f zero three one one six").value   # 'A9F03116'
-    normalise_rating("i c sixty n b sixteen").value           # 'IC60N B16'
-
-WARNING -- the word lists below are a starting point, not a finished module.
-BLOCK_GUIDE says to build these rules from your own recordings. Until 20 real
-part-number reads exist, every entry here is a guess about how speech comes out.
-Extend from transcripts.csv, not from imagination.
+    normalise_rating("i c sixty n b sixteen").value           # 'IC60NB16'
 """
 
 from __future__ import annotations
@@ -74,17 +70,33 @@ PART_RE = re.compile(r"^[A-Z0-9.\-]{4,20}$")
 
 @dataclass
 class Normalised:
-    """Raw is always kept. BLOCK_GUIDE: never lose the original transcript."""
+    """Result of normalising one transcript. The raw text is always kept.
+
+    Attributes:
+        raw: Original transcript (BLOCK_GUIDE: never lose it).
+        value: Canonical string.
+        kind: "part", "rating" or "tag".
+        well_formed: Shape looks plausible -- NOT "exists in the schematic".
+        reason: Why it is not well formed, if so.
+        tokens: The pieces that built the value.
+    """
     raw: str
     value: str
-    kind: str                     # 'part' | 'rating'
+    kind: str                     # 'part' | 'rating' | 'tag'
     well_formed: bool             # shape is plausible -- NOT 'exists in schematic'
     reason: str = ""
     tokens: list[str] = field(default_factory=list)
 
 
 def _pre(text: str) -> list[str]:
-    """Lowercase, strip accents and punctuation, split into tokens."""
+    """Lowercase, strip accents and punctuation, and split into tokens.
+
+    Args:
+        text: Raw transcript.
+
+    Returns:
+        List of tokens.
+    """
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.lower().replace("-", " ").replace("_", " ")
@@ -93,7 +105,16 @@ def _pre(text: str) -> list[str]:
 
 
 def _expand_repeats(tokens: list[str]) -> list[str]:
-    """'double three' -> '3','3'  ·  'triple zero' -> '0','0','0'."""
+    """Expand "double" / "triple" into repeated tokens.
+
+    Example: ["double", "three"] -> ["three", "three"].
+
+    Args:
+        tokens: Tokens from _pre().
+
+    Returns:
+        Tokens with repeats expanded.
+    """
     out, i = [], 0
     mult = {"double": 2, "triple": 3}
     while i < len(tokens):
@@ -107,7 +128,15 @@ def _expand_repeats(tokens: list[str]) -> list[str]:
 
 
 def normalise_part(raw: str) -> Normalised:
-    """Spoken part number -> canonical string. Never corrected to a legal value."""
+    """Turn a spoken part number into a canonical string. Never corrected to a legal value.
+
+    Args:
+        raw: Transcript, e.g. "a nine f zero three one one six".
+
+    Returns:
+        Normalised(kind="part"), e.g. value "A9F03116". well_formed is False
+        for unknown tokens, nothing recognised, or an implausible shape.
+    """
     tokens = _expand_repeats(_pre(raw))
     out: list[str] = []
     unknown: list[str] = []
@@ -150,13 +179,18 @@ def normalise_part(raw: str) -> Normalised:
 
 
 def normalise_rating(raw: str) -> Normalised:
-    """Spoken rating line -> compact canonical string, e.g. 'IC60NB16'.
+    """Turn a spoken rating line into a compact canonical string, e.g. "IC60NB16".
 
-    Canonical form is uppercase alphanumeric with all spaces removed. This is
-    deliberate: deciding where the family name ends and the rating begins
-    ('IC60N' + 'B16') would require consulting the legal set, and that is the
-    adjudicator's job, not this module's. Block 6 compacts the schematic side
-    the same way, so the comparison stays honest on both sides.
+    Spaces are removed on purpose: splitting "IC60N" from "B16" would need the
+    legal set, which is the adjudicator's job. Block 6 compacts the schematic
+    side the same way, so both sides stay comparable.
+
+    Args:
+        raw: Transcript, e.g. "i c sixty n b sixteen".
+
+    Returns:
+        Normalised(kind="rating"). well_formed is False for unknown tokens or
+        nothing recognised.
     """
     tokens = _expand_repeats(_pre(raw))
     out: list[str] = []
@@ -193,14 +227,17 @@ def normalise_rating(raw: str) -> Normalised:
 
 
 def normalise_tag(raw: str) -> Normalised:
-    """Spoken device tag -> canonical form. 'Minus 5, F2' -> '-5F2'.
+    """Turn a spoken device tag into canonical form: "Minus 5, F2" -> "-5F2".
 
-    Tags are the one place CONTEXT §7 allows a closed vocabulary, because the
-    schematic enumerates every legal value. This function still does not snap
-    to that set -- it only canonicalises. Membership is the adjudicator's call.
+    Only canonicalises; never snaps to the legal tag set (CONTEXT §7).
+    Membership is the adjudicator's call.
 
-    Built from real transcripts (Block 5, 28 Aug): faster-whisper emitted
-    'Minus 5, F2', 'minus 1q1', 'minus 13 k2', 'minus 12 f6'.
+    Args:
+        raw: Transcript, e.g. "minus 13 k2".
+
+    Returns:
+        Normalised(kind="tag"). well_formed is False for unknown tokens,
+        nothing recognised, or a shape unlike "-10F1" / "-D1".
     """
     # Whisper punctuates: 'minus 5F3.' arrives with the stop attached to the
     # token. Found in the first live run, 31 Aug -- it cost 2 of 10 items.
@@ -247,12 +284,20 @@ def normalise_tag(raw: str) -> Normalised:
 
 
 def compact(text: str) -> str:
-    """THE canonical form. Both sides of every comparison go through this one
-    function -- speech and schematic alike. Defining it twice is how the
-    umlaut bug got in: '4O..' from speech never equalled '4..' from the file.
+    """THE canonical form, used on both sides of every comparison.
 
-    'Acti9 iC60N B16'   -> 'ACTI9IC60NB16'
-    '4Oe,63A,230VAC'    -> '4O63A230VAC'   (accents folded, not dropped)
+    Speech and schematic both go through this one function. Defining it twice
+    is how the umlaut bug got in.
+
+    Examples:
+        'Acti9 iC60N B16' -> 'ACTI9IC60NB16'
+        '4Ö,63A,230VAC'   -> '4O63A230VAC'   (accents folded, not dropped)
+
+    Args:
+        text: Any string, or None.
+
+    Returns:
+        Uppercase letters and digits only.
     """
     text = unicodedata.normalize("NFKD", text or "")
     text = "".join(ch for ch in text if not unicodedata.combining(ch))

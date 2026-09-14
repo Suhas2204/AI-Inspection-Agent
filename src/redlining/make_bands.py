@@ -1,12 +1,13 @@
 """Block 3, step 1: emit the 29 rows the advisor session ranks.
 
-21 device types + 8 terminal strips = 29 rows. The band column is left empty
-on purpose: it is filled in the advisor session, by a human, and this script
-must never guess it.
+- 21 device types + 8 terminal strips = 29 rows.
+- The band column is left empty on purpose: a human fills it in the advisor
+  session. This script never guesses it.
+- Reads data/schematic.cleaned.json, writes data/bands.csv.
+- Refuses to overwrite an existing bands.csv (it holds decisions).
 
-Run:  uv run python make_bands.py
-Reads data/schematic_cleaned.json, writes data/bands.csv.
-Refuses to overwrite an existing bands.csv, because that file holds decisions.
+Run:
+    uv run python -m redlining.make_bands
 """
 
 import csv
@@ -26,11 +27,24 @@ EXPECTED_DEVICE_TYPES = 21
 
 
 def load(path):
+    """Load the component records from a cleaned schematic export.
+
+    Args:
+        path: Cleaned JSON file.
+
+    Returns:
+        List of component records.
+    """
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)["components"]
 
 
 def main():
+    """Check the counts, then write bands.csv with an empty band column.
+
+    Exits without writing if bands.csv already exists or the counts disagree
+    with CONTEXT §6.
+    """
     if OUT.exists():
         sys.exit(
             f"{OUT} already exists and holds advisor decisions. "

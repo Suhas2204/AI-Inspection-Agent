@@ -1,17 +1,13 @@
 """Block 8: the run log, the flag queue, and the report.
 
-Two rules from CONTEXT.md §4, and they are structural here, not advisory:
+Two structural rules (CONTEXT.md §4):
+  1. Flags are APPEND-ONLY. No delete or close method, no 'resolved' status.
+     A trainee closing a flag would be performing sign-off.
+  2. The report lists ALL items, not only flags. Without the matches there is
+     no false-flag rate -- the number that decides whether anyone trusts this.
 
-  1. Flags are APPEND-ONLY. There is no delete method, no close method, no
-     status field a trainee can set to 'resolved'. Grep this file for 'delete'
-     or 'remove' -- there is nothing to find. A trainee closing a flag is a
-     trainee performing sign-off.
-  2. The report contains ALL items, not only flags. Without the matches there
-     is no false-flag rate, and the false-flag rate is the number that decides
-     whether anyone trusts this system.
-
-Attempts are written to a JSON Lines file opened in append mode and fsynced,
-so a crash mid-run keeps everything already recorded.
+Attempts go to a JSON Lines file, appended and fsynced, so a crash mid-run
+keeps everything already recorded.
 """
 
 from __future__ import annotations
@@ -27,11 +23,30 @@ FLAGGED = {"mismatch", "not_in_schematic", "abstain"}
 
 
 def _now() -> str:
+    """Current UTC time as an ISO-8601 string (seconds precision)."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 @dataclass
 class Attempt:
+    """One recorded attempt at one item, exactly as it stood.
+
+    Attributes:
+        item: Tag of the item.
+        kind: "device" or "strip".
+        band: Priority band of the item.
+        attempt_no: 1-3; three attempts on one item is itself a signal.
+        spoken_prompt: What the trainee heard (location only).
+        raw_transcript: Unedited ASR text (BLOCK_GUIDE: always keep the raw).
+        normalised: Canonical form after normalisation.
+        well_formed: Whether the normaliser accepted the shape.
+        confidence: ASR confidence, if known.
+        audio_path: Stored recording, if any.
+        outcome: Verdict outcome.
+        reason: Verdict reason.
+        expected: What the schematic expected (revealed after the verdict).
+        at: UTC timestamp.
+    """
     item: str
     kind: str
     band: int
@@ -50,7 +65,14 @@ class Attempt:
 
 @dataclass
 class Annotation:
-    """The trainee's account of a flag. Additive only."""
+    """The trainee's account of a flag. Additive only.
+
+    Attributes:
+        item: Tag of the flagged item.
+        kind: "i_misspoke", "part_looks_wrong" or "note".
+        text: Free-text detail.
+        at: UTC timestamp.
+    """
     item: str
     kind: str                    # 'i_misspoke' | 'part_looks_wrong' | 'note'
     text: str
@@ -58,9 +80,21 @@ class Annotation:
 
 
 class RunLog:
-    """Append-only run store. Instantiating it creates runs/<timestamp>/."""
+    """Append-only run store. Instantiating it creates runs/<timestamp>/.
+
+    Attributes:
+        run_id: Run id, e.g. "20260913-170300".
+        dir: Run folder holding attempts, annotations, audio and reports.
+        duration_s: Run length in seconds, set by the runner after the run.
+    """
 
     def __init__(self, root: Path = RUNS, run_id: str | None = None):
+        """Create the run folder and its audio subfolder.
+
+        Args:
+            root: Parent folder for all runs.
+            run_id: Explicit id; defaults to the current local timestamp.
+        """
         self.run_id = run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
         self.dir = Path(root) / self.run_id
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -73,17 +107,32 @@ class RunLog:
         self.duration_s: float | None = None
 
     def _append(self, path: Path, payload: dict) -> None:
+        """Append one JSON line and fsync it, so it survives a crash.
+
+        Args:
+            path: JSONL file.
+            payload: Record to write.
+        """
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
             fh.flush()
             os.fsync(fh.fileno())
 
     def record(self, attempt: Attempt) -> None:
+        """Store an attempt in memory and append it to attempts.jsonl.
+
+        Args:
+            attempt: The attempt to log.
+        """
         self._attempts.append(attempt)
         self._append(self.attempts_path, asdict(attempt))
 
     def annotate(self, annotation: Annotation) -> None:
-        """The only thing a trainee may add to a flag. It cannot subtract."""
+        """Add a trainee annotation to a flag. The only addition allowed; nothing can be removed.
+
+        Args:
+            annotation: The annotation to log.
+        """
         self._annotations.append(annotation)
         self._append(self.annotations_path, asdict(annotation))
 
@@ -98,14 +147,32 @@ class RunLog:
 
     @property
     def flags(self) -> list[Attempt]:
+        """Final attempts with a flagged outcome (mismatch, not_in_schematic, abstain)."""
         return [a for a in self.final_attempts if a.outcome in FLAGGED]
 
     def annotations_for(self, item: str) -> list[Annotation]:
+        """All annotations for one item.
+
+        Args:
+            item: Tag of the item.
+
+        Returns:
+            Annotations in the order they were added.
+        """
         return [n for n in self._annotations if n.item == item]
 
     # ---------------------------------------------------------------- outputs
     def write_report(self, expected_items: int = 100,
                      duration_s: float | None = None) -> Path:
+        """Write report.json and report.md for this run.
+
+        Args:
+            expected_items: Items the run should cover (sets "complete").
+            duration_s: Run length in seconds, if known.
+
+        Returns:
+            Path to report.json.
+        """
         finals = self.final_attempts
         counts: dict[str, int] = {}
         for a in finals:
@@ -143,7 +210,13 @@ class RunLog:
         return path
 
     def _write_markdown(self, report: dict) -> None:
-        """A reviewer should be able to act on this without asking a question."""
+        """Write report.md: summary, flags with full context, then all items.
+
+        A reviewer should be able to act on it without asking a question.
+
+        Args:
+            report: The dict built by write_report().
+        """
         L = [f"# Inspection run {report['run_id']}", ""]
         dur = report.get("duration_s")
         dur_txt = f"{round(dur)}s" if dur else "duration not recorded"
