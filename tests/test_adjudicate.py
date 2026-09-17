@@ -5,8 +5,6 @@
 - -X4 is used for the strip count checks.
 """
 
-from pathlib import Path
-
 import pytest
 
 from redlining.adjudicate import (
@@ -17,8 +15,7 @@ from redlining.adjudicate import (
     Adjudicator,
 )
 from redlining.normalise import compact
-
-SCHEMATIC = Path(__file__).resolve().parent.parent / "data" / "schematic.cleaned.json"
+from redlining.paths import SCHEMATIC
 
 
 @pytest.fixture(scope="module")

@@ -18,7 +18,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-RUNS = Path("runs")
+from .paths import RUNS
+
 FLAGGED = {"mismatch", "not_in_schematic", "abstain"}
 
 
@@ -279,7 +280,7 @@ class RunLog:
 
 
 if __name__ == "__main__":
-    log = RunLog(root=Path("runs"))
+    log = RunLog(root=RUNS)
     log.record(Attempt(
         item="-8F7", kind="device", band=1, attempt_no=1,
         spoken_prompt="left frame, row 3, position 5",

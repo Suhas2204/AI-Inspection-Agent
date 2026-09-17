@@ -24,6 +24,7 @@ from pathlib import Path
 from .adjudicate import Adjudicator, ABSTAIN
 from .checklist import Item, load_checklist
 from .normalise import normalise_part, normalise_rating, normalise_tag
+from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
 
 MAX_REASKS = 2                    # 3 attempts total, per CONTEXT §7
@@ -295,10 +296,10 @@ class ScriptedInput:
 def main() -> None:
     """CLI: parse flags, build checklist and input source, run, triage, report."""
     ap = argparse.ArgumentParser()
-    ap.add_argument("--export", default="data/schematic.cleaned.json")
+    ap.add_argument("--export", default=SCHEMATIC)
     ap.add_argument("--limit", type=int, default=None,
                     help="stop after N items (smoke test only)")
-    ap.add_argument("--runs-dir", default="runs")
+    ap.add_argument("--runs-dir", default=RUNS)
     ap.add_argument("--scripted", action="store_true",
                     help="smoke test: feed the schematic back in, no keyboard")
     ap.add_argument("--live", action="store_true",

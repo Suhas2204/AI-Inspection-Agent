@@ -3,7 +3,7 @@
 - 21 device types + 8 terminal strips = 29 rows.
 - The band column is left empty on purpose: a human fills it in the advisor
   session. This script never guesses it.
-- Reads data/schematic.cleaned.json, writes data/bands.csv.
+- Reads data/processed/schematic.cleaned.json, writes data/decisions/bands.csv.
 - Refuses to overwrite an existing bands.csv (it holds decisions).
 
 Run:
@@ -14,10 +14,11 @@ import csv
 import json
 import sys
 from collections import Counter
-from pathlib import Path
 
-SRC = Path("data/schematic.cleaned.json")
-OUT = Path("data/bands.csv")
+from .paths import BANDS, SCHEMATIC
+
+SRC = SCHEMATIC
+OUT = BANDS
 
 STRIP_TAGS = ["-X1", "-X2", "-X3", "-X4", "-X5", "-X6", "-X7", "-X8"]
 

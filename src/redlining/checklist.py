@@ -1,7 +1,8 @@
 """Block 3 (code half): join the walking order with the advisor's bands.
 
-- Positions (data/walking_order.csv) come from Block 2 and can be regenerated.
-- Bands (data/bands.csv) are advisor decisions -- never regenerated.
+- Positions (data/processed/walking_order.csv) come from Block 2 and can be
+  regenerated.
+- Bands (data/decisions/bands.csv) are advisor decisions -- never regenerated.
 - Items are sorted band first, then physical position within the band.
 - An item with no band is a hard failure, never silently defaulted to 4.
 """
@@ -12,8 +13,7 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
-WALKING_ORDER = Path("data/walking_order.csv")
-BANDS = Path("data/bands.csv")
+from .paths import BANDS, WALKING_ORDER
 
 FRAME_ORDER = ["left frame", "left side panel", "right frame",
                "right side panel", "no location in file"]

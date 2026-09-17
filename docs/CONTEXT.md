@@ -200,10 +200,11 @@ comparison, not the deployment path.
 
 **`DECISION` Environment is pinned, and the pins are load-bearing.**
 `ctranslate2` 4.8.1 crashes silently on Windows — a native abort with no Python
-traceback. Pinned to 3.24.0, which requires `setuptools<81`. `faster-whisper`
-≥1.2.1 demands `ctranslate2` ≥4.0, so the two cannot both be resolved by `uv
-sync`; the working venv is maintained with `uv pip install` and run with
-`--no-sync`. Ugly, and recorded here so the next machine does not rediscover it.
+traceback. Pinned to 4.0, which `faster-whisper` 1.2.1 accepts and which
+transcribes on Windows (verified 14 Sep); `setuptools<81` is still required.
+`uv sync` now resolves cleanly, so the earlier `uv pip install` / `--no-sync`
+workaround is no longer needed. Recorded so the next machine does not
+rediscover the 4.8.1 crash.
 
 ## 8. Evaluation — what this thesis can and cannot claim
 
@@ -276,7 +277,7 @@ Blocks 0–10, gated. `DECISIONS.md` holds outcomes per block.
 | 3 Bands | rows banded, advisor confirmed |
 | 4 Normaliser | rules survive real tag reads; punctuation bug found and fixed |
 | 5 ASR check | 100 labels recorded. **Gate not passed: no error rate on paper, per engine.** Run `transcribe.py` over the recordings — it is one pass and it is a thesis table |
-| 6 Adjudicator | all four outcomes reachable; tests still in `__main__`, not `tests/` |
+| 6 Adjudicator | **passed** — all four outcomes reachable; 11 tests in `tests/test_adjudicate.py` |
 | 7 Session | live runs completed at the cabinet |
 | 8 Flags/report | append-only, audio retained per attempt |
 | 9 Evaluation | **not started. This is the thesis chapter.** |
@@ -320,8 +321,8 @@ on this list, and nothing on this list is skipped because it came out badly.
 | 1 | **Redline precision** | Of flags raised, how many are genuine schematic errors worth sending upstream? | `runs/*/report.md` + adjudication by the author against the cabinet | `experiments/block09_eval/redlines.py` | not started |
 | 2 | **Detection rate @ 10% abstain** | Of planted faults, how many are flagged when the system may skip 10% of items? | `runs/*/attempts.csv` + `faults.csv` | `block09_eval/score.py` | not started |
 | 3 | **Risk–coverage curve** | How much does detection improve as the system is allowed to abstain more? | same as 2 | `block09_eval/score.py` | not started |
-| 4 | **Confusability map** | Which device tags are close enough that a one-character misread yields a different *legal* tag? | `data/schematic.cleaned.json` only | `block09_eval/confusability.py` | not started |
-| 5 | **ASR character accuracy** | Does Whisper hear the tag, and which character does it lose? | `data/transcripts.csv`, `expected` column filled by hand | `experiments/block05_asr/score.py` | blocked: `expected` empty |
+| 4 | **Confusability map** | Which device tags are close enough that a one-character misread yields a different *legal* tag? | `data/processed/schematic.cleaned.json` only | `experiments/block09_eval/confusability.py` | script written; output in `data/processed/confusability.csv` |
+| 5 | **ASR character accuracy** | Does Whisper hear the tag, and which character does it lose? | `data/processed/transcripts.csv`, `expected` column filled by hand | `experiments/block05_asr/score.py` | blocked: `expected` empty |
 | 6 | **Time per cabinet** | Does a run fit inside the working shift? | `RunLog.duration_s` | already recorded | measured, not reported |
 
 **Priority is deliberate.** 1 is the thesis claim: this project is about

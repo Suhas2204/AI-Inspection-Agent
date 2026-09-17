@@ -9,7 +9,7 @@
 
 Run:
     uv run python -m redlining.position
-    uv run python -m redlining.position --csv data/walking_order.csv
+    uv run python -m redlining.position --csv data/processed/walking_order.csv
     uv run python -m redlining.position --include-structural   # keep rails and ducts
 """
 
@@ -19,7 +19,9 @@ import json
 import sys
 from collections import defaultdict
 
-DATA = "data/schematic.cleaned.json"
+from .paths import SCHEMATIC
+
+DATA = SCHEMATIC
 
 # Which location prefix is which frame, as the trainee sees it.
 # UNVERIFIED -- swap the first two if the cabinet says otherwise.

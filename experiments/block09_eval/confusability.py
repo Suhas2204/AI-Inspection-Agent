@@ -9,8 +9,8 @@
 - Says what COULD collide, not what does. Track 1 (ASR accuracy) measures that.
 
 Run:
-    uv run python experiments/block05_asr/confusability.py
-    uv run python experiments/block05_asr/confusability.py --csv data/confusability.csv
+    uv run python experiments/block09_eval/confusability.py
+    uv run python experiments/block09_eval/confusability.py --csv data/processed/confusability.csv
 """
 
 from __future__ import annotations
@@ -22,8 +22,10 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DATA = "data/schematic.cleaned.json"
-ORDER = "data/walking_order.csv"
+from redlining.paths import SCHEMATIC, WALKING_ORDER
+
+DATA = SCHEMATIC
+ORDER = WALKING_ORDER
 
 # Structural: the metalwork components clip onto. Excluded from the checklist
 # per CONTEXT §10, so excluded here -- they are never spoken.

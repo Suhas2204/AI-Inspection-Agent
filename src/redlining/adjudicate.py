@@ -12,7 +12,7 @@
 
 Example:
     from redlining.adjudicate import Adjudicator
-    adj = Adjudicator.from_export("data/schematic.cleaned.json")
+    adj = Adjudicator.from_export("data/processed/schematic.cleaned.json")
     adj.judge_device("-8F7", part="A9F03110", rating="C60N1P10AB")
 """
 
@@ -75,8 +75,10 @@ def terminal_functions(type_str: str) -> Counter:
 # One canonical form for the whole project. Do not redefine it here.
 try:
     from .normalise import compact
+    from .paths import SCHEMATIC
 except ImportError:                       # running the file directly
     from normalise import compact
+    from paths import SCHEMATIC
 
 
 def edit_distance(a: str, b: str) -> int:
@@ -150,7 +152,7 @@ class Adjudicator:
         """Build an Adjudicator from a cleaned schematic JSON file.
 
         Args:
-            path: Path to e.g. data/schematic.cleaned.json.
+            path: Path to e.g. data/processed/schematic.cleaned.json.
 
         Returns:
             A ready Adjudicator.
@@ -383,7 +385,7 @@ class Adjudicator:
 
 if __name__ == "__main__":
     # Demo cases live in tests/test_adjudicate.py now -- run `pytest` for those.
-    adj = Adjudicator.from_export("data/schematic.cleaned.json")
+    adj = Adjudicator.from_export(SCHEMATIC)
     print(f"{len(adj.devices)} devices · {len(adj.terminals)} terminals · "
           f"{len(adj.legal_parts)} legal part numbers\n")
 

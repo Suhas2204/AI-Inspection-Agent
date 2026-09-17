@@ -7,8 +7,8 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
-runs/
-__pycache__/
 .venv/
+
+# Run outputs and recordings
+runs/
 *.wav

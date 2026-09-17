@@ -7,9 +7,9 @@
     173  core  ->  92 devices + 81 terminals in 8 strips  ->  100 checklist items
 
 - Nothing is dropped silently: every removed record gets a reason in
-  data/dropped.csv, so the drop is auditable.
+  data/processed/dropped.csv, so the drop is auditable.
 - WARNING: FILLER_TERMS is a guess from BLOCK_GUIDE, not from the export.
-  Read data/dropped.csv and confirm nothing real was removed.
+  Read data/processed/dropped.csv and confirm nothing real was removed.
 
 Run:
     uv run python -m redlining.loader
@@ -26,9 +26,10 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-RAW = Path("data/schematic.json")
-OUT = Path("data/schematic.cleaned.json")
-DROPPED = Path("data/dropped.csv")
+from .paths import DROPPED, SCHEMATIC, SCHEMATIC_RAW
+
+RAW = SCHEMATIC_RAW
+OUT = SCHEMATIC
 
 # Gate values. From CONTEXT §6, with the part-number count corrected: the 37 in
 # BLOCK_GUIDE was computed before filler removal and is wrong.
@@ -104,7 +105,7 @@ def load_raw(path: Path) -> tuple[dict, list[dict]]:
     """Read the raw schematic export.
 
     Args:
-        path: Raw JSON export, e.g. data/schematic.json.
+        path: Raw JSON export, e.g. data/raw/schematic.json.
 
     Returns:
         (metadata, records): the top-level dict ({} if the file is a bare
@@ -114,7 +115,7 @@ def load_raw(path: Path) -> tuple[dict, list[dict]]:
         SystemExit: If the file does not exist.
     """
     if not path.exists():
-        sys.exit(f"{path} not found. Put the raw export in data/ first.")
+        sys.exit(f"{path} not found. Put the raw export in data/raw/ first.")
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     records = data["components"] if isinstance(data, dict) else data

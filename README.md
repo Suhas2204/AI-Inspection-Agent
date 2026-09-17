@@ -81,7 +81,7 @@ Research prototype. **Evaluation is in progress; no performance results are clai
 - **Single cabinet, single evaluator.** Faults are planted and scored by the author without blinding, and no manual baseline is run.
 - **Speech is English;** accented, non-native speakers are assumed.
 
-Full rationale, assumptions and open questions: [CONTEXT.md](CONTEXT.md). Per-block outcomes: [DECISIONS.md](DECISIONS.md).
+Full rationale, assumptions and open questions: [docs/CONTEXT.md](docs/CONTEXT.md). Per-block outcomes: [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Repository structure
 
@@ -89,8 +89,11 @@ Full rationale, assumptions and open questions: [CONTEXT.md](CONTEXT.md). Per-bl
 |---|---|
 | `src/redlining/` | The pipeline, one module per block |
 | `tests/` | pytest suite |
-| `experiments/block05_asr/` | ASR transcription and tag-confusability scripts |
-| `data/` | Cabinet export, bands, walking order, transcripts |
+| `experiments/` | ASR transcription (`block05_asr`) and tag confusability (`block09_eval`) |
+| `data/raw/` | Inputs as received: EPLAN export, recording |
+| `data/processed/` | Generated files: cleaned export, walking order, transcripts |
+| `data/decisions/` | Human decisions: risk bands |
+| `docs/` | Specification, decision log, block guide and map |
 | `runs/` | Run outputs (generated, not tracked) |
 
 ## Citation
@@ -109,4 +112,4 @@ Full rationale, assumptions and open questions: [CONTEXT.md](CONTEXT.md). Per-bl
 
 The source code is released under the [MIT License](LICENSE).
 
-The cabinet data and media (`data/`, `Cabinet_Components_Overview.jpeg`, `BLOCK_GUIDE.pdf`) are included for reproducibility only. They are **not** covered by the MIT License and may not be reused without permission.
+The cabinet data and media (`data/`, `docs/Cabinet_Components_Overview.jpeg`, `docs/BLOCK_GUIDE.pdf`) are included for reproducibility only. They are **not** covered by the MIT License and may not be reused without permission.

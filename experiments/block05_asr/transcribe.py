@@ -6,9 +6,11 @@
 
 Run:
     export OPENAI_API_KEY=...
-    uv run python experiments/block05_asr/transcribe.py experiments/block05_asr/audio/
+    uv run python experiments/block05_asr/transcribe.py data/raw/ --out data/processed/
 
-Outputs (next to the audio, or in --out):
+Outputs (next to the audio, or in --out -- pass --out data/processed/, since
+the recordings now sit in data/raw/ and transcripts belong with the generated
+files):
     transcripts.json   full result with segment timestamps, both engines
     transcripts.csv    one row per segment, for marking right/wrong by hand
 

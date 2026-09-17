@@ -23,6 +23,6 @@ SOFTWARE.
 ---
 
 Scope: this license applies to the source code only. The cabinet data and
-media in this repository (data/, Cabinet_Components_Overview.jpeg,
-BLOCK_GUIDE.pdf) are not covered by this license and may not be reused
-without permission.
+media in this repository (data/, docs/Cabinet_Components_Overview.jpeg,
+docs/BLOCK_GUIDE.pdf) are not covered by this license and may not be
+reused without permission.
