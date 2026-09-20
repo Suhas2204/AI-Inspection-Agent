@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .adjudicate import Adjudicator, ABSTAIN
+from .adjudicate import Adjudicator, Verdict, ABSTAIN
 from .checklist import Item, load_checklist
 from .normalise import normalise_part, normalise_rating, normalise_tag
 from .paths import RUNS, SCHEMATIC
@@ -156,6 +156,66 @@ def parse_counts(text: str) -> dict:
     return out
 
 
+def step_item(item: Item, adj: Adjudicator, source, log: RunLog,
+              attempt_no: int, mode: str = "tag") -> Verdict:
+    """Run one attempt at one item: prompt, commit, adjudicate, log.
+
+    Exactly one pass. It never loops, sleeps, prints or decides whether to
+    re-ask -- the caller owns the attempt count and the re-ask decision.
+
+    Args:
+        item: The checklist item being read.
+        adj: Adjudicator for the cabinet.
+        source: Input with .device(prompt, attempt) and .strip(prompt, attempt).
+        log: RunLog that receives this attempt.
+        attempt_no: 1 for the first try; higher for a silent re-ask.
+        mode: "part" = part number + rating line (CONTEXT §7);
+            "tag" = tag only -- simpler, and blind to a wrong part.
+
+    Returns:
+        The Verdict for this attempt, already recorded in the log.
+    """
+    # --- prompt: location only. The expected value is not consulted.
+    if hasattr(source, "_tag"):
+        source._tag = item.tag        # scripted input only
+    read = (source.strip(item.spoken, attempt_no) if item.kind == "strip"
+            else source.device(item.spoken, attempt_no))
+
+    # --- commit: normalise before anything is compared.
+    if item.kind == "strip":
+        verdict = adj.judge_strip(item.tag, parse_counts(read.counts_raw))
+        normalised = str(parse_counts(read.counts_raw))
+        well_formed = bool(parse_counts(read.counts_raw))
+    elif mode == "tag":
+        t = normalise_tag(read.tag_raw)
+        normalised = t.value
+        well_formed = t.well_formed
+        verdict = adj.judge_tag(item.tag, t.value, t.well_formed)
+    else:
+        p = normalise_part(read.part_raw) if read.part_raw else None
+        r = normalise_rating(read.rating_raw) if read.rating_raw else None
+        normalised = " | ".join(x.value for x in (p, r) if x)
+        well_formed = all(x.well_formed for x in (p, r) if x)
+        verdict = adj.judge_device(
+            item.tag,
+            part=p.value if p else None,
+            rating=r.value if r else None,
+            part_well_formed=p.well_formed if p else True,
+            rating_well_formed=r.well_formed if r else True,
+        )
+
+    # --- adjudicate: record the attempt exactly as it stands.
+    log.record(Attempt(
+        item=item.tag, kind=item.kind, band=item.band,
+        attempt_no=attempt_no, spoken_prompt=item.spoken,
+        raw_transcript=read.raw, normalised=normalised,
+        well_formed=well_formed, confidence=read.confidence,
+        audio_path=read.audio_path, outcome=verdict.outcome,
+        reason=verdict.reason, expected=verdict.expected,
+    ))
+    return verdict
+
+
 def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
         max_reasks: int = MAX_REASKS, mode: str = "tag") -> None:
     """Walk every item (prompt, commit, adjudicate, log), then write the report.
@@ -176,44 +236,7 @@ def run(items: list[Item], adj: Adjudicator, source, log: RunLog,
         while True:
             attempt_no += 1
 
-            # --- prompt: location only. The expected value is not consulted.
-            if hasattr(source, "_tag"):
-                source._tag = item.tag        # scripted input only
-            read = (source.strip(item.spoken, attempt_no) if item.kind == "strip"
-                    else source.device(item.spoken, attempt_no))
-
-            # --- commit: normalise before anything is compared.
-            if item.kind == "strip":
-                verdict = adj.judge_strip(item.tag, parse_counts(read.counts_raw))
-                normalised = str(parse_counts(read.counts_raw))
-                well_formed = bool(parse_counts(read.counts_raw))
-            elif mode == "tag":
-                t = normalise_tag(read.tag_raw)
-                normalised = t.value
-                well_formed = t.well_formed
-                verdict = adj.judge_tag(item.tag, t.value, t.well_formed)
-            else:
-                p = normalise_part(read.part_raw) if read.part_raw else None
-                r = normalise_rating(read.rating_raw) if read.rating_raw else None
-                normalised = " | ".join(x.value for x in (p, r) if x)
-                well_formed = all(x.well_formed for x in (p, r) if x)
-                verdict = adj.judge_device(
-                    item.tag,
-                    part=p.value if p else None,
-                    rating=r.value if r else None,
-                    part_well_formed=p.well_formed if p else True,
-                    rating_well_formed=r.well_formed if r else True,
-                )
-
-            # --- adjudicate: record the attempt exactly as it stands.
-            log.record(Attempt(
-                item=item.tag, kind=item.kind, band=item.band,
-                attempt_no=attempt_no, spoken_prompt=item.spoken,
-                raw_transcript=read.raw, normalised=normalised,
-                well_formed=well_formed, confidence=read.confidence,
-                audio_path=read.audio_path, outcome=verdict.outcome,
-                reason=verdict.reason, expected=verdict.expected,
-            ))
+            verdict = step_item(item, adj, source, log, attempt_no, mode=mode)
 
             if verdict.outcome == ABSTAIN and attempt_no <= max_reasks:
                 continue                       # silent re-ask, nothing revealed

@@ -13,6 +13,7 @@ dependencies = [
     "soundfile>=0.14.0",
     "numpy<2.0",
     "pyttsx3>=2.99",
+    "streamlit>=1.64.0",
 ]
 
 [build-system]
