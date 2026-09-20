@@ -1,0 +1,11 @@
+id,item,item_b,kind,band,location,fault_class,what_i_do,expected_outcome,detectable,confusability_note,seed,planted_on,found
+C09,-4F6,,device,2,"right frame, row 3, position 7",wrong_tag_foreign,card says: at -4F6 position speak -9F9,not_in_schematic,yes,tests the foreign-part branch,20260920,,
+C05,-12F5,-12F6,device,2,"right frame, row 4, position 8",label_swap,card says: at -12F5 position speak -12F6; at -12F6 position speak -12F5,mismatch at both positions,yes,"adjacent, distance 1",20260920,,
+C17,-2Q2,-2Q3,device,1,"right frame, row 5, position 1",label_swap,card says: at -2Q2 position speak -2Q3; at -2Q3 position speak -2Q2,mismatch at both positions,yes,"distance 1, both band 1",20260920,,
+C18,-5F1,,device,1,"left frame, row 3, position 1",wrong_tag_legal,card says: at -5F1 position speak -5F3,mismatch,yes,"distance 1, same row",20260920,,
+C14,-X8,,strip,3,"right frame, row 1, position 5",strip_count_bracket,card says: at -X8 omit the bracket count,mismatch on counts,yes,tests the bracket decision of 14 Sep,20260920,,
+C07,-1Q1,,device,1,"left frame, row 2, position 1",wrong_tag_legal,card says: at -1Q1 position speak -1F1,mismatch,yes,"F/Q substitution, adjacent pair",20260920,,
+C06,-10F3,-10F4,device,2,"right frame, row 5, position 4",label_swap,card says: at -10F3 position speak -10F4; at -10F4 position speak -10F3,mismatch at both positions,yes,"adjacent, distance 1, differs 3/4",20260920,,
+C04,-8F7,-8F8,device,2,"left frame, row 4, position 17",label_swap,card says: at -8F7 position speak -8F8; at -8F8 position speak -8F7,mismatch at both positions,yes,"adjacent, distance 1",20260920,,
+C08,-13K1,,device,2,"right frame, row 2, position 2",wrong_tag_legal,card says: at -13K1 position speak -13K2,mismatch,yes,"distance 1, not adjacent in walking order",20260920,,
+C12,-X3,,strip,3,"right frame, row 1, position 2",strip_count_short,card says: at -X3 count as if one L terminal were absent,mismatch on counts,yes,strip path validated 14 Sep,20260920,,

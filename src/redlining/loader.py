@@ -47,7 +47,8 @@ FILLER_TERMS = [
     "blindabdeck",      # blanking cover
     "abdeckung",        # cover
     "blanking",
-    "aderleiste",       # wire ridge
+    "aderleiste",       # wire ridge (German type name)
+    "wire ridge",       # same part, English type name in this export
     "distanzstuck", "distanzstück",   # spacer
     "isolierstuck", "isolierstück",   # insulator
     "endkappe",         # end cap
@@ -56,6 +57,8 @@ FILLER_TERMS = [
 ]
 
 WRAPPER_TERM = "kombination"
+WRAPPER_REASON = "assembly wrapper ('- Kombination')"
+MERGED_NOTE = "; location and position merged into the kept record"
 
 
 def norm(s) -> str:
@@ -97,7 +100,7 @@ def is_wrapper(rec: dict) -> str | None:
     """
     if WRAPPER_TERM in norm(rec.get("designation")) or \
        WRAPPER_TERM in norm(rec.get("type")):
-        return "assembly wrapper ('- Kombination')"
+        return WRAPPER_REASON
     return None
 
 
@@ -120,6 +123,55 @@ def load_raw(path: Path) -> tuple[dict, list[dict]]:
         data = json.load(fh)
     records = data["components"] if isinstance(data, dict) else data
     return (data if isinstance(data, dict) else {}), records
+
+
+def merge_wrapper_locations(core: list[dict],
+                            dropped: list[tuple[dict, str]]) -> list[dict]:
+    """Give a kept record the location and coordinates of its wrapper twin.
+
+    The export splits some devices in two: a '- Kombination' wrapper holding
+    the location but no part number, and the real device holding the part
+    number but no location. Keeping the record with the part number used to
+    throw the location away with the wrapper -- that is how -1Q2 and -1Q3
+    reached the walking order as "no location in file". Merge the halves
+    rather than choosing between them.
+
+    Location alone is not enough: position.py assigns a rail row by matching
+    a device's y against the rail heights, and the kept record's position is
+    all zeros. Without the wrapper's coordinates the device knows its frame
+    and still has no row. Both move together or neither is any use.
+
+    Only an empty location is filled, and only from exactly one candidate:
+    two wrappers for one tag is an ambiguity to report, not to resolve here.
+    The wrapper is still dropped; its reason records that it was merged.
+
+    Args:
+        core: Kept records, modified in place.
+        dropped: (record, reason) pairs; reasons are updated in place.
+
+    Returns:
+        The core records that gained a location.
+    """
+    wrappers: dict[str, list[int]] = {}
+    for i, (rec, reason) in enumerate(dropped):
+        if reason == WRAPPER_REASON and norm(rec.get("location")):
+            wrappers.setdefault(norm(rec.get("designation")), []).append(i)
+
+    merged = []
+    for rec in core:
+        if norm(rec.get("location")):
+            continue
+        found = wrappers.get(norm(rec.get("designation")), [])
+        if len(found) != 1:
+            continue                    # nothing to take, or ambiguous
+        wrapper, reason = dropped[found[0]]
+        rec["location"] = wrapper.get("location", "")
+        rec["parent_location"] = wrapper.get("parent_location", "")
+        if "position" in wrapper:
+            rec["position"] = wrapper["position"]
+        dropped[found[0]] = (wrapper, reason + MERGED_NOTE)
+        merged.append(rec)
+    return merged
 
 
 def clean(records: list[dict]) -> tuple[list[dict], list[tuple[dict, str]]]:
@@ -146,6 +198,7 @@ def clean(records: list[dict]) -> tuple[list[dict], list[tuple[dict, str]]]:
 
         (dropped.append((rec, reason)) if reason else core.append(rec))
 
+    merge_wrapper_locations(core, dropped)
     return core, dropped
 
 
