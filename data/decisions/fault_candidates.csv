@@ -1,0 +1,19 @@
+id,item,item_b,kind,band,location,fault_class,what_i_do,expected_outcome,detectable,confusability_note
+C01,-6F1,-6F4,device,1,"left frame, row 3, position 4",label_swap,"swap the -6F1 and -6F4 labels (adjacent, edit distance 1, phonetic pair)",mismatch at both positions,yes,worst pair in cabinet: adjacent AND phonetic AND distance 1 (confusability.csv)
+C02,-5F2,-5F3,device,1,"left frame, row 3, position 2",label_swap,swap -5F2 and -5F3 labels,mismatch at both positions,yes,"adjacent, distance 1, differs 2/3"
+C03,-7F7,-7F8,device,2,"left frame, row 4, position 8",label_swap,swap -7F7 and -7F8 labels,mismatch at both positions,yes,"adjacent, distance 1, differs 7/8"
+C04,-8F7,-8F8,device,2,"left frame, row 4, position 17",label_swap,swap -8F7 and -8F8 labels,mismatch at both positions,yes,"adjacent, distance 1"
+C05,-12F5,-12F6,device,2,"right frame, row 4, position 8",label_swap,swap -12F5 and -12F6 labels,mismatch at both positions,yes,"adjacent, distance 1"
+C06,-10F3,-10F4,device,2,"right frame, row 5, position 4",label_swap,swap -10F3 and -10F4 labels,mismatch at both positions,yes,"adjacent, distance 1, differs 3/4"
+C07,-1Q1,,device,1,"left frame, row 2, position 1",wrong_tag_legal,relabel as -1F1 (a tag that exists elsewhere in this cabinet),mismatch,yes,"F/Q substitution, adjacent pair"
+C08,-13K1,,device,2,"right frame, row 2, position 1",wrong_tag_legal,relabel as -13K2,mismatch,yes,"distance 1, not adjacent in walking order"
+C09,-4F6,,device,2,"right frame, row 3, position 6",wrong_tag_foreign,relabel as -9F9 (no such tag in this cabinet),not_in_schematic,yes,tests the foreign-part branch
+C10,-14F1,,device,2,"left frame, row 3, position 6",missing,cover the label completely with blank tape,abstain then flag after 3 attempts,yes,"detected as abstain, NOT as mismatch"
+C11,-3F4,,device,2,"right frame, row 2, position 5",missing,cover the label completely with blank tape,abstain then flag after 3 attempts,yes,second missing case for rate stability
+C12,-X3,,strip,3,"right frame, row 1, position 2",strip_count_short,tell walker to count as if one L terminal were absent,mismatch on counts,yes,strip path validated 14 Sep
+C13,-X6,,strip,3,"right frame, row 1, position 3",strip_count_extra,tell walker to count one extra N terminal,mismatch on counts,yes,
+C14,-X8,,strip,3,"right frame, row 1, position 5",strip_count_bracket,tell walker to omit the bracket count,mismatch on counts,yes,tests the bracket decision of 14 Sep
+C17,-2Q2,-2Q3,device,1,"right frame, row 5, position 1",label_swap,swap -2Q2 and -2Q3 labels,mismatch at both positions,yes,"distance 1, both band 1"
+C18,-5F1,,device,1,"left frame, row 3, position 1",wrong_tag_legal,relabel as -5F3,mismatch,yes,"distance 1, same row"
+C19,-X5,,strip,3,"left frame, row 1, position 3",strip_count_short,tell walker to count as if two PE terminals were absent,mismatch on counts,yes,"largest strip, 20 terminals"
+C20,-13K2,,device,2,"right frame, row 3, position 1",missing,cover the label completely with blank tape,abstain then flag after 3 attempts,yes,third missing case
