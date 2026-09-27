@@ -59,6 +59,8 @@ def terminal_functions(type_str: str) -> Counter:
         return Counter({"PE": 1})
     if t.startswith("WNT"):
         return Counter({"N": 1})
+    if t.startswith("WDU") and t.replace(" ", "").endswith("BL"):
+        return Counter({"N": 1})
     if t.startswith("WDU"):
         return Counter({"L": 1})
     if t.startswith("ZEW"):
