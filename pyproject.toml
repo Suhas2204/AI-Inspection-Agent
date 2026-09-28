@@ -26,4 +26,5 @@ packages = ["src/redlining"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "matplotlib>=3.9",          # Block 9 figures only; no runtime path needs it
 ]
