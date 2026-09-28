@@ -21,13 +21,24 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .adjudicate import Adjudicator, Verdict, ABSTAIN
+from .adjudicate import (
+    ABSTAIN,
+    PART_EDIT_MAX,
+    TAG_EDIT_MAX,
+    Adjudicator,
+    Verdict,
+)
 from .checklist import Item, load_checklist
 from .normalise import normalise_part, normalise_rating, normalise_tag
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
 
-MAX_REASKS = 2                    # 3 attempts total, per CONTEXT §7
+# Silent re-asks allowed after an abstain: 2, so 3 attempts total, per
+# CONTEXT §7. The default only -- run() takes it as an argument and the CLI
+# exposes it, because the re-ask budget is one axis of the risk-coverage trade
+# (more re-asks, fewer items left abstaining, more verdicts committed to).
+# Swept in experiments/block09_eval/risk_coverage.py.
+MAX_REASKS = 2
 
 TAG_MODE_WARNING = (
     "MODE: tag only. This checks that the right label is in the right\n"
@@ -336,9 +347,19 @@ def main() -> None:
                          "'tag': tag only -- cannot detect a wrong part")
     ap.add_argument("--kind", choices=["device", "strip", "all"], default="all",
                     help="restrict the run to one item kind")
+    ap.add_argument("--max-reasks", type=int, default=MAX_REASKS,
+                    help=f"silent re-asks allowed after an abstain "
+                         f"(default {MAX_REASKS}, so {MAX_REASKS + 1} attempts)")
+    ap.add_argument("--part-edit-max", type=int, default=PART_EDIT_MAX,
+                    help="part numbers this near the expected value abstain "
+                         f"instead of not-in-schematic (default {PART_EDIT_MAX})")
+    ap.add_argument("--tag-edit-max", type=int, default=TAG_EDIT_MAX,
+                    help=f"the same threshold for tags (default {TAG_EDIT_MAX})")
     args = ap.parse_args()
 
-    adj = Adjudicator.from_export(args.export)
+    adj = Adjudicator.from_export(args.export,
+                                  part_edit_max=args.part_edit_max,
+                                  tag_edit_max=args.tag_edit_max)
     items = load_checklist()
     if args.kind != "all":
         items = [i for i in items if i.kind == args.kind]
@@ -359,7 +380,7 @@ def main() -> None:
         source = KeyboardInput(args.mode)
     if args.mode == "tag":
         print(TAG_MODE_WARNING)
-    run(items, adj, source, log, mode=args.mode)
+    run(items, adj, source, log, max_reasks=args.max_reasks, mode=args.mode)
     if not args.scripted:
         triage(log)
         # Re-emit so annotations appear. Keep the duration from the timed run.

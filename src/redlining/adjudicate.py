@@ -43,6 +43,19 @@ NO_PRINTED_PART = {"A9D56616", "A9D56613"}
 END_BRACKET_TYPE = "ZEW 35 DBS"
 COUNT_END_BRACKETS = True
 
+# How near the expected value an unknown read may be before the abstain is
+# blamed on the microphone rather than the cabinet. These are the defaults the
+# runs so far used; they are parameters, not constants, because the whole
+# risk-coverage trade lives in them: widen one and a mismatch or a
+# not-in-schematic becomes an abstain, so the run re-asks more and commits to
+# fewer verdicts. Swept in experiments/block09_eval/risk_coverage.py.
+#
+# Widening one never weakens the CONTEXT §7 rule. A near read is still never
+# adopted as its neighbour -- the verdict moves between ABSTAIN and
+# MISMATCH/NOT_IN_SCHEMATIC, never into a MATCH.
+PART_EDIT_MAX = 2     # part numbers: 8 characters, so 2 is ~25% of the string
+TAG_EDIT_MAX = 1      # tags: 4-6 characters, and neighbours sit at distance 1
+
 # Terminal function, derived from the type string per CONTEXT §7.
 def terminal_functions(type_str: str) -> Counter:
     """Count the terminal functions encoded in a terminal type string.
@@ -133,14 +146,25 @@ class Adjudicator:
         devices: Tag -> component record, for everything that is not a strip.
         terminals: Component records belonging to strips -X1..-X8.
         legal_parts: Every compacted part number in the cabinet (membership only).
+        part_edit_max: Distance within which an unknown part number abstains
+            instead of returning not-in-schematic.
+        tag_edit_max: The same threshold for tags.
     """
 
-    def __init__(self, components: list[dict]):
+    def __init__(self, components: list[dict],
+                 part_edit_max: int = PART_EDIT_MAX,
+                 tag_edit_max: int = TAG_EDIT_MAX):
         """Index the cleaned components.
 
         Args:
             components: The "components" list from the cleaned schematic export.
+            part_edit_max: Edit distance within which an unknown part number is
+                reported as a likely misread (ABSTAIN) rather than as absent
+                from the cabinet (NOT_IN_SCHEMATIC). 0 disables the branch.
+            tag_edit_max: The same threshold for spoken tags.
         """
+        self.part_edit_max = part_edit_max
+        self.tag_edit_max = tag_edit_max
         strips = set(STRIP_TAGS)
         self.devices = {r["designation"]: r for r in components
                         if r["designation"] not in strips}
@@ -150,17 +174,22 @@ class Adjudicator:
                             if r.get("order_reference")}
 
     @classmethod
-    def from_export(cls, path: str | Path) -> "Adjudicator":
+    def from_export(cls, path: str | Path,
+                    part_edit_max: int = PART_EDIT_MAX,
+                    tag_edit_max: int = TAG_EDIT_MAX) -> "Adjudicator":
         """Build an Adjudicator from a cleaned schematic JSON file.
 
         Args:
             path: Path to e.g. data/processed/schematic.cleaned.json.
+            part_edit_max: See __init__.
+            tag_edit_max: See __init__.
 
         Returns:
             A ready Adjudicator.
         """
         with open(path, encoding="utf-8") as fh:
-            return cls(json.load(fh)["components"])
+            return cls(json.load(fh)["components"],
+                       part_edit_max=part_edit_max, tag_edit_max=tag_edit_max)
 
     # ---------------------------------------------------------------- devices
     def judge_device(self, tag: str, part: str | None = None,
@@ -224,7 +253,7 @@ class Adjudicator:
         if part:
             if part not in self.legal_parts:
                 d = edit_distance(part, exp_part)
-                if d <= 2:
+                if d <= self.part_edit_max:
                     # Close to what was expected. A misread and a genuinely
                     # foreign part look identical here, so we do not choose.
                     # We name what it is near; we never adopt it.
@@ -296,7 +325,8 @@ class Adjudicator:
 
         Returns:
             Verdict: MATCH; MISMATCH (a real tag from elsewhere); ABSTAIN
-            (nothing read, malformed, or 1 character off); NOT_IN_SCHEMATIC.
+            (nothing read, malformed, or within tag_edit_max of the expected
+            tag); NOT_IN_SCHEMATIC.
         """
         expected = {"tag": tag}
         read = {"tag": (read_tag or "").upper()}
@@ -319,10 +349,10 @@ class Adjudicator:
                            tag, read, expected)
 
         d = edit_distance(got, tag.upper())
-        if d <= 1:
+        if d <= self.tag_edit_max:
             return Verdict(ABSTAIN,
                            f"{got} is no tag in this cabinet and differs from the "
-                           f"expected {tag} by {d} character; likely a misread. "
+                           f"expected {tag} by {d} character(s); likely a misread. "
                            f"Ask again", tag, read, expected)
         return Verdict(NOT_IN_SCHEMATIC, f"{got} is no tag in this cabinet",
                        tag, read, expected)
