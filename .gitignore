@@ -9,6 +9,18 @@ wheels/
 # Virtual environments
 .venv/
 
-# Run outputs and recordings
-runs/
+# Run outputs and recordings. A run is local evidence, not source, and the
+# audio is a recording of someone's voice. Both stay out by default.
+runs/*
 *.wav
+
+# One exception: the run the Block 9 experiments are computed from. Without it
+# a clone holds the figures and the CER numbers but nothing to recompute them
+# from, so neither can be checked. Data only -- report.json and attempts.jsonl
+# are all either script reads. The audio stays local, so the CONTEXT §4 replay
+# gate still needs this machine.
+!runs/20260927-130613/
+runs/20260927-130613/*
+!runs/20260927-130613/attempts.jsonl
+!runs/20260927-130613/report.json
+!runs/20260927-130613/report.md
