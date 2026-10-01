@@ -9,6 +9,17 @@ wheels/
 # Virtual environments
 .venv/
 
+# Secrets. transcribe.py reads OPENAI_API_KEY from the environment and no key
+# is written down anywhere -- these patterns are here to keep it that way.
+# Streamlit's secrets file is listed because app.py would make it the obvious
+# place to put one.
+.env
+.env.*
+.streamlit/secrets.toml
+secrets.json
+*.pem
+*.key
+
 # Run outputs and recordings. A run is local evidence, not source, and the
 # audio is a recording of someone's voice. Both stay out by default.
 runs/*
