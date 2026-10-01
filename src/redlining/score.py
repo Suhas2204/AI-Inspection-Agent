@@ -48,6 +48,18 @@ BANDS = (1, 2, 3)
 
 
 def load_run(run_dir: Path) -> dict:
+    """Load one run's report.json.
+
+    Args:
+        run_dir: A run folder, e.g. runs/20260927-130613.
+
+    Returns:
+        The parsed report.
+
+    Raises:
+        SystemExit: The folder holds no report.json, so there is no run to
+            score and guessing at one would be worse than stopping.
+    """
     report = run_dir / "report.json"
     if not report.exists():
         raise SystemExit(f"no report.json in {run_dir}")
@@ -55,6 +67,19 @@ def load_run(run_dir: Path) -> dict:
 
 
 def load_faults(path: Path) -> list[dict]:
+    """Load the planted fault set, refusing anything it cannot score.
+
+    Args:
+        path: faults.csv, as written by select_faults.
+
+    Returns:
+        One dict per fault row, in file order.
+
+    Raises:
+        SystemExit: The file is absent, empty, or lacks the `item` or
+            `detectable` column. Each would silently empty the denominator,
+            which reads as a perfect score rather than as a broken input.
+    """
     if not path.exists():
         raise SystemExit(
             f"no faults file at {path}. Block 9 has not been planted yet; "
@@ -73,8 +98,12 @@ def load_faults(path: Path) -> list[dict]:
 def positions(fault: dict) -> list[str]:
     """The positions a fault occupies: one, or two for a label swap.
 
-    item_b is optional. Blank, absent, or equal to item means a
-    single-position fault.
+    Args:
+        fault: One row of faults.csv. item_b is optional; blank, absent, or
+            equal to item means a single-position fault.
+
+    Returns:
+        The tags the fault was planted at, in card order.
     """
     first = fault["item"].strip()
     second = (fault.get("item_b") or "").strip()
@@ -82,7 +111,19 @@ def positions(fault: dict) -> list[str]:
 
 
 def scoring_position(fault: dict, final: dict[str, dict]) -> str:
-    """The position a row is scored at: the flagged end, else a walked one."""
+    """The position a row is scored at: the flagged end, else a walked one.
+
+    A swap is one fault at two positions, so its band and its verdict are
+    taken from the end that caught it. Finding one end is finding the swap.
+
+    Args:
+        fault: One row of faults.csv.
+        final: Verdict per item, from flagged_items().
+
+    Returns:
+        The tag this row is scored at. Falls back to the first position when
+        neither end was walked.
+    """
     pos = positions(fault)
     for p in pos:
         if p in final and final[p].get("flagged"):
@@ -91,12 +132,29 @@ def scoring_position(fault: dict, final: dict[str, dict]) -> str:
 
 
 def band_of(fault: dict, final: dict[str, dict]) -> str | None:
+    """The priority band a fault row is credited to.
+
+    Args:
+        fault: One row of faults.csv.
+        final: Verdict per item, from flagged_items().
+
+    Returns:
+        The band as a string, or None if the row was never walked and so
+        belongs to no band's tally.
+    """
     a = final.get(scoring_position(fault, final))
     return None if a is None else str(a.get("band"))
 
 
 def flagged_items(report: dict) -> dict[str, dict]:
-    """Final verdict per item. The last attempt is the one that stands."""
+    """Final verdict per item. The last attempt is the one that stands.
+
+    Args:
+        report: A run's parsed report.json.
+
+    Returns:
+        Item tag -> the attempt whose verdict stands.
+    """
     final: dict[str, dict] = {}
     for a in report.get("items", []):
         prev = final.get(a["item"])
@@ -106,6 +164,20 @@ def flagged_items(report: dict) -> dict[str, dict]:
 
 
 def score(report: dict, faults: list[dict]) -> dict:
+    """Score one run against the planted faults. Writes nothing.
+
+    The definitions are the ones fixed in the module docstring: planted,
+    caught, missed, not walked, false flag and known miss. They live here so
+    the thesis and the code cannot disagree about them.
+
+    Args:
+        report: A run's parsed report.json.
+        faults: Rows from faults.csv.
+
+    Returns:
+        Every metric plus the rows behind it, so a reader can check any
+        number by looking at what it was computed from.
+    """
     final = flagged_items(report)
     walked = set(final)
 
@@ -177,15 +249,42 @@ def score(report: dict, faults: list[dict]) -> dict:
 
 
 def pct(x) -> str:
+    """Format a ratio as a whole-number percentage.
+
+    Args:
+        x: Ratio in 0..1, or None where the metric is undefined.
+
+    Returns:
+        e.g. "80%", or "n/a". A rate with an empty denominator prints as
+        "n/a" rather than as 0%, which would read as a measured failure.
+    """
     return "n/a" if x is None else f"{x * 100:.0f}%"
 
 
 def label(fault: dict) -> str:
-    """How a row prints: both ends of a swap, so a reader can find them."""
+    """How a row prints: both ends of a swap, so a reader can find them.
+
+    Args:
+        fault: One row of faults.csv.
+
+    Returns:
+        The positions joined with "<->", e.g. "-8F7<->-8F8".
+    """
     return "<->".join(positions(fault))
 
 
 def report_text(s: dict) -> str:
+    """Render the scorer's reading for a human.
+
+    Lists every row a reviewer has to act on: known-miss flags, planted rows
+    never walked, misses, and the false flags to replay before reporting.
+
+    Args:
+        s: The dict returned by score().
+
+    Returns:
+        The report, ready to print.
+    """
     L = [
         f"Run {s['run_id']} - {s['items_walked']} of {s['items_expected']} items"
         f"{'' if s['complete'] else ' (INCOMPLETE)'}",
@@ -244,6 +343,14 @@ def report_text(s: dict) -> str:
 
 
 def latex(s: dict) -> str:
+    """Render the headline metrics as a LaTeX tabular for the thesis.
+
+    Args:
+        s: The dict returned by score().
+
+    Returns:
+        A tabular environment, to be wrapped in a table and captioned.
+    """
     rows = [
         ("Items walked", f"{s['items_walked']} / {s['items_expected']}"),
         ("Planted faults (detectable)", str(s["planted"])),
@@ -264,6 +371,7 @@ def latex(s: dict) -> str:
 
 
 def main() -> None:
+    """CLI: score one run and print it as text, JSON or a LaTeX table."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("run_dir", type=Path)
     ap.add_argument("--faults", type=Path,

@@ -56,7 +56,16 @@ class Recorder:
         stop = threading.Event()
 
         def callback(indata, _frames, _time, status):
-            """Queue each incoming audio block (sounddevice stream callback)."""
+            """Queue each incoming audio block (sounddevice stream callback).
+
+            Args:
+                indata: The block of samples just captured. It is copied
+                    before queuing, because sounddevice reuses the buffer.
+                _frames: Sample count, which the queue does not need.
+                _time: Stream timestamps, unused.
+                status: Underrun or overrun flags, reported to stderr so a
+                    dropped block is visible rather than silent.
+            """
             if status:
                 print(f"    [audio: {status}]", file=sys.stderr)
             frames.put(indata.copy())

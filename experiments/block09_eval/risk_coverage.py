@@ -555,6 +555,15 @@ def decimal_comma(decimals: int):
         A function matplotlib can use as a tick formatter.
     """
     def fmt(value: float, _pos=None) -> str:
+        """Render one tick.
+
+        Args:
+            value: The tick value.
+            _pos: Tick index, which matplotlib passes and this ignores.
+
+        Returns:
+            The tick label, with a comma for the decimal point.
+        """
         return f"{value:.{decimals}f}".replace(".", ",")
     return fmt
 

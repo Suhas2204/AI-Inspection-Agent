@@ -82,7 +82,13 @@ def init_state() -> None:
 
 
 def elapsed_s() -> float:
-    """Seconds since the run began, or the final duration once it has ended."""
+    """Seconds since the run began, or the final duration once it has ended.
+
+    Returns:
+        The elapsed seconds. After the run is written the stored duration is
+        returned instead of a live clock, so the figure on screen matches the
+        one in the report rather than drifting past it.
+    """
     log = st.session_state["log"]
     if log.duration_s is not None:
         return log.duration_s
