@@ -115,3 +115,31 @@ were deleted, C15 because it contradicted the C04 label swap at -8F7.
 Drawn is not planted. The block starts when the faults are in the cabinet.
 
 ## Block 10 — Redlines — not started; cut first if time runs short.
+
+## 3D boxes — anchor convention — 4 Oct
+
+Question: model3d.build_boxes emits a box per cleaned part, but the export
+         never says whether position is a part's corner or its centre. A
+         viewer assuming the wrong one is offset by half a part everywhere.
+Found:   Corner. position is the low edge on x, y and z, so a box runs
+         [x, x+w], [y, y+h], [z, z+d]; y grows upward, so the y anchor is the
+         part's bottom edge. Three measurements off the cleaned export:
+         - 143/143 parts mounted on an ED2 rail fall inside that rail's
+           495 mm x-span. As centres, 103/143, with -14K1 landing 154.5 mm
+           past the end of its own rail.
+         - 0 of the 173 boxes interpenetrate. As centres, 43 pairs do, 9 of
+           them between non-structural parts.
+         - 18 of the 34 unequal-width neighbours touch to within 0.05 mm as
+           corners; 0 do as centres.
+         y separately: overlap cannot decide it, because parts on one rail
+         share an identical y. Settled on the envelope instead -- the four
+         900 mm ED12 ducts at y=-1900 reach -1000 as a bottom edge, against
+         -2800 as a top edge, 900 mm below every other part in the file.
+         Bottom edge gives a 1642 mm cabinet; top edge 2512 mm.
+Changed: model3d.py's UNVERIFIED anchor note replaced by this finding. No
+         number changed: the pass-through anchor was already the low edge, so
+         the boxes built before this check were already right.
+Gate:    NOT a spec. Measured from one export, not from the CAD model. x and
+         z rest on the containment and overlap counts and are firm. y rests
+         on those ducts being floor-mounted -- confirm before trusting a
+         vertical clearance.

@@ -14,11 +14,25 @@ which position.py already documents as 495 mm.
 y is negative downward, as in position.py: the largest y is the highest part.
 Boxes are returned in the export's own frame, not re-centred or flipped.
 
-- UNVERIFIED: whether position is a part's corner or its centre. The export
-  does not say, and it is not inferable from one file. The box anchor is
-  passed through as exported; a viewer that assumes the wrong one will be
-  offset by half a part. Settle this against the CAD model before trusting
-  any overlap or collision read off these boxes.
+The anchor is a corner, not a centre: position is the low edge on all three
+axes, so a box runs [x, x+w], [y, y+h], [z, z+d]. Because y grows upward, the
+low edge in y is the part's bottom. Measured off this export three ways:
+
+- Rail containment. All 143 parts mounted on an ED2 rail fall inside that
+  rail's 495 mm x-span. Read as centres only 103 of 143 do, and -14K1 ends up
+  154.5 mm past the end of the rail it is clipped to.
+- Overlap. No two of the 173 boxes interpenetrate. Read as centres, 43 pairs
+  do, 9 of them between non-structural parts -- 43 impossibilities.
+- The 900 mm ducts. The four ED12 ducts sit at y=-1900. As a bottom edge they
+  reach y=-1000 and fill the cabinet; as a top edge they would reach y=-2800,
+  900 mm below every other part in the file.
+
+x and z are pinned hard by the first two counts. y is the weaker leg: parts on
+one rail share an identical y, so overlap cannot separate them at all, and the
+duct argument assumes those ducts stand on the cabinet floor. Confirm y
+against the CAD model before trusting a vertical clearance read off these
+boxes. The anchor is still passed through as exported -- this note records
+which convention that pass-through turned out to be, and changes no number.
 
 Run:
     uv run python -m redlining.model3d
