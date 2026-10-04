@@ -143,3 +143,35 @@ Gate:    NOT a spec. Measured from one export, not from the CAD model. x and
          z rest on the containment and overlap counts and are firm. y rests
          on those ducts being floor-mounted -- confirm before trusting a
          vertical clearance.
+
+## 3D viewer — outcome colours — 4 Oct
+
+Question: the finished-run overview colours every part by what the run
+         decided about it. Six categories have to stay apart for a reader
+         with colour vision deficiency, not just on the author's screen.
+Rejected: the obvious Okabe-Ito reading (blue #0072B2, vermillion #D55E00,
+         orange #E69F00, reddish purple #CC79A7, grey #999999). Simulated
+         under deuteranopia, purple and grey fall to dE 7.1 -- the same
+         colour. "Colour-blind safe palette" is a property of a palette as
+         a whole, not of the colours taken one at a time, and this is what
+         picking named safe colours and stopping there buys.
+Decided: chosen by search, maximising the worst pairwise CIELAB separation
+         across normal, protanopia, deuteranopia and tritanopia vision
+         (Machado 2009 simulation matrices):
+           match             #1F6FB2  blue
+           mismatch          #E34A33  orange-red
+           abstain           #FFB400  amber
+           not_in_schematic  #762A83  purple
+           never visited     #A6A6A6  grey
+           structural        #E3E3E3  faded
+         Worst case dE 16.7, its tightest pair blue against purple, against
+         7.1 for the rejected set.
+Changed: the left side panel moved from green #59a14f to brown #9c755f, so
+         green means the current walking step and nothing else. A green
+         side panel beside a green "go here" box was the one confusion this
+         palette had to avoid.
+Gate:    NOT a contrast audit. The separation is between the fills; it says
+         nothing about text on them, and it was measured against white. The
+         legend carries the outcome name beside every swatch, so colour is
+         never the only channel -- which is the part that actually makes it
+         readable, and the part no dE number proves.
