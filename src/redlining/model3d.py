@@ -104,6 +104,113 @@ def build_boxes(path: Path = DATA) -> list[dict]:
     return boxes
 
 
+# How the viewer paints a box. Here rather than in the page so it can be
+# tested without starting Streamlit, and so app.py stays the thin front end
+# its own docstring says it is. Nothing here imports adjudicate: an outcome
+# arrives as the plain string the run logged, so this module has no opinion
+# about how that verdict was reached.
+FRAME_COLOURS = {
+    "left frame": "#4e79a7",
+    "right frame": "#f28e2b",
+    "left side panel": "#9c755f",     # brown: green belongs to the current item
+    "right side panel": "#b07aa1",
+}
+UNKNOWN_FRAME_COLOUR = "#9c9c9c"
+
+# A part the run has not answered yet: one uniform cube on the part's own
+# centre, no tag, no size. Both are what a trainee would otherwise read off
+# the screen instead of off the cabinet.
+PLACEHOLDER_MM = 5.0
+PLACEHOLDER_COLOUR = "#9aa0a6"
+PLACEHOLDER_HOVER = "not read yet"
+
+# The item the run is on: big enough to find at a glance, and still unnamed,
+# because the view says where to go, not what will be found there.
+CURRENT_MM = 30.0
+CURRENT_COLOUR = "#2e8b3d"
+CURRENT_HOVER = "next to read"
+
+
+def centred_cube(box: dict, mm: float) -> dict:
+    """The same box reduced to a cube of edge mm on its own centre.
+
+    Args:
+        box: A box dict from build_boxes().
+        mm: Edge length of the cube.
+
+    Returns:
+        A box dict with the cube's corner and size; every other key is kept,
+        so the real size stays reachable through the original box.
+    """
+    half = mm / 2.0
+    return {**box,
+            "x": box["x"] + box["w"] / 2.0 - half,
+            "y": box["y"] + box["h"] / 2.0 - half,
+            "z": box["z"] + box["d"] / 2.0 - half,
+            "w": mm, "h": mm, "d": mm}
+
+
+def box_style(box: dict, outcome: str | None = None,
+              structural: bool = False,
+              current: bool = False) -> tuple[dict, str, str]:
+    """How one box is drawn: its geometry, its colour, and its hover.
+
+    Precedence is current, then answered or structural, then unanswered. The
+    current item wins over its own answer so that a re-ask still points at
+    one place.
+
+    Args:
+        box: A box dict from build_boxes().
+        outcome: The run's verdict for this tag, e.g. "match" or "abstain",
+            or None if the run has not answered it.
+        structural: True for rails and ducts, which are drawn true all run.
+        current: True for the one box the run is sending the trainee to.
+
+    Returns:
+        (drawn_box, colour, hover). drawn_box is the real box when it is
+        answered, structural or nothing special, and a cube on its centre
+        when it is the current item or still unanswered.
+    """
+    if current:
+        return centred_cube(box, CURRENT_MM), CURRENT_COLOUR, CURRENT_HOVER
+
+    if outcome is None and not structural:
+        return (centred_cube(box, PLACEHOLDER_MM), PLACEHOLDER_COLOUR,
+                PLACEHOLDER_HOVER)
+
+    colour = FRAME_COLOURS.get(box["frame"], UNKNOWN_FRAME_COLOUR)
+    hover = (f"{box['tag']} — {box['frame']}<br>"
+             f"{box['w']:.1f} × {box['h']:.1f} × {box['d']:.1f} mm")
+    if outcome is not None:
+        hover += f"<br>{outcome}"
+    return box, colour, hover
+
+
+def representative_index(boxes: list[dict], tag: str) -> int | None:
+    """Index of the single box that stands for a tag.
+
+    A device is one box, but a terminal strip is many -- -X5 is 20 of them --
+    and a view marking "the item the trainee is being sent to" has to mark one
+    thing, not twenty. The representative is the one the walk reaches first:
+    topmost, then leftmost, then furthest back. y is negative downward, so
+    topmost is the largest y; the order matches position.py's top-to-bottom,
+    left-to-right walk.
+
+    Args:
+        boxes: Boxes from build_boxes().
+        tag: A checklist item's tag, e.g. "-8F7" or "-X5".
+
+    Returns:
+        The index into boxes, or None if no box carries that tag. Never a
+        list: the caller marks exactly one box or none.
+    """
+    found = [n for n, box in enumerate(boxes) if box["tag"] == tag]
+    if not found:
+        return None
+    return min(found, key=lambda n: (-boxes[n]["y"], boxes[n]["x"],
+                                     boxes[n]["z"]))
+
+
 def main() -> None:
     """CLI: build the boxes and print what came out, per frame."""
     parser = argparse.ArgumentParser()
