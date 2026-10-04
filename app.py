@@ -289,3 +289,162 @@ with tab_metrics:
                 "metrics 2 and 3).")
     st.caption("Time per cabinet (metric 6) is on the Run tab. Nothing is "
                "reported here that is not on the CONTEXT metrics list.")
+
+# ------------------------------------------------------------------ 3D view
+# Additive. Nothing above this line reads anything defined below it, and the
+# figure is built only when the box is ticked, so a live inspection run pays
+# nothing for this section. plotly is imported defensively: it is not in
+# pyproject.toml, and a hard import would stop the whole page from loading
+# for anyone who has not installed it.
+try:                                            # noqa: E402 -- section-local
+    import plotly.graph_objects as go
+    HAVE_PLOTLY = True
+except ModuleNotFoundError:
+    HAVE_PLOTLY = False
+
+from redlining.model3d import build_boxes       # noqa: E402 -- kept with its use
+
+FRAME_COLOURS = {
+    "left frame": "#4e79a7",
+    "right frame": "#f28e2b",
+    "left side panel": "#59a14f",
+    "right side panel": "#b07aa1",
+}
+UNKNOWN_FRAME_COLOUR = "#9c9c9c"
+
+# The 12 triangles of a cuboid, indexing the 8 corners box_corners() emits.
+CUBOID_FACES = [
+    (0, 1, 2), (0, 2, 3),        # z = z        (back)
+    (4, 5, 6), (4, 6, 7),        # z = z + d    (front)
+    (0, 1, 5), (0, 5, 4),        # y = y        (bottom)
+    (2, 3, 7), (2, 7, 6),        # y = y + h    (top)
+    (1, 2, 6), (1, 6, 5),        # x = x + w    (right)
+    (3, 0, 4), (3, 4, 7),        # x = x        (left)
+]
+
+
+def box_corners(box: dict) -> list[tuple[float, float, float]]:
+    """The 8 corners of one box, from (x, y, z) to (x+w, y+h, z+d).
+
+    Corner order is fixed: the four at z, counter-clockwise from (x, y), then
+    the same four at z + d. CUBOID_FACES indexes this order.
+
+    Args:
+        box: A box dict from build_boxes().
+
+    Returns:
+        (x, y, z) triples in mm, in the export's own frame.
+    """
+    x, y, z = box["x"], box["y"], box["z"]
+    x1, y1, z1 = x + box["w"], y + box["h"], z + box["d"]
+    return [(x, y, z), (x1, y, z), (x1, y1, z), (x, y1, z),
+            (x, y, z1), (x1, y, z1), (x1, y1, z1), (x, y1, z1)]
+
+
+@st.cache_data(show_spinner=False)
+def cabinet_mesh() -> dict:
+    """Flatten every box into the arrays one Mesh3d trace needs.
+
+    One merged trace rather than 173, which keeps the browser responsive.
+    Cached because the cleaned export does not change while the page is up.
+
+    Returns:
+        Dict of x/y/z vertex lists, i/j/k triangle indices, per-face colours,
+        per-vertex hover text, and the box count. Coordinates stay in the
+        export's own axes; the swap to screen axes happens at plot time.
+    """
+    boxes = build_boxes()
+    xs, ys, zs, text = [], [], [], []
+    i, j, k, facecolour = [], [], [], []
+
+    for n, box in enumerate(boxes):
+        colour = FRAME_COLOURS.get(box["frame"], UNKNOWN_FRAME_COLOUR)
+        label = (f"{box['tag']} — {box['frame']}<br>"
+                 f"{box['w']:.1f} × {box['h']:.1f} × {box['d']:.1f} mm<br>"
+                 f"corner ({box['x']:.1f}, {box['y']:.1f}, {box['z']:.1f})")
+        for cx, cy, cz in box_corners(box):
+            xs.append(cx)
+            ys.append(cy)
+            zs.append(cz)
+            text.append(label)
+        offset = 8 * n
+        for a, b, c in CUBOID_FACES:
+            i.append(offset + a)
+            j.append(offset + b)
+            k.append(offset + c)
+            facecolour.append(colour)
+
+    return {"x": xs, "y": ys, "z": zs, "i": i, "j": j, "k": k,
+            "facecolour": facecolour, "text": text, "n": len(boxes)}
+
+
+def cabinet_figure():
+    """Build the Mesh3d figure, with y upright and all three axes to scale.
+
+    Plotly draws its z axis vertically, so the export's y is passed as the
+    plot's z and the export's z (depth) as the plot's y. The data is not
+    transformed -- only which screen axis each one is drawn on. aspectmode
+    "data" is what keeps 1 mm the same length on every axis; without it
+    Plotly stretches each axis to fill the cube and the cabinet comes out
+    the wrong shape.
+
+    The camera is orthographic and square on to the face: no perspective, so
+    two parts of equal width measure equally on screen wherever they sit, and
+    a rail reads as a straight line rather than a converging one.
+
+    Depth runs toward the viewer -- the ED2 rails sit at z=40..75 and the
+    devices clipped to them at z=95 -- so the face is the high-z side and the
+    camera belongs at +z, which is +y once y and z are swapped for the screen.
+    Viewed from there Plotly puts +x to the LEFT, which would mirror the
+    cabinet and reverse the walking order. Reversing the x axis cancels that:
+    the camera stays in front, x reads left to right, and the tick labels keep
+    their true values. Verified by rendering, not by reasoning about
+    handedness -- the mirrored version is easy to produce and hard to notice.
+
+    Returns:
+        A plotly Figure.
+    """
+    mesh = cabinet_mesh()
+    figure = go.Figure(data=[go.Mesh3d(
+        x=mesh["x"], y=mesh["z"], z=mesh["y"],      # y upright, z into depth
+        i=mesh["i"], j=mesh["j"], k=mesh["k"],
+        facecolor=mesh["facecolour"],
+        text=mesh["text"], hoverinfo="text",
+        flatshading=True,
+    )])
+    figure.update_layout(
+        height=760,
+        margin=dict(l=8, r=8, t=8, b=8),   # 0 clips the y tick labels
+        scene=dict(
+            aspectmode="data",                      # equal scaling, all axes
+            xaxis=dict(title="x — across (mm)", autorange="reversed"),
+            yaxis=dict(title="z — depth (mm)"),
+            zaxis=dict(title="y — height (mm)"),
+            camera=dict(
+                eye=dict(x=0.0, y=2.5, z=0.0),      # out in front of the face
+                center=dict(x=0.0, y=0.0, z=0.0),
+                up=dict(x=0.0, y=0.0, z=1.0),       # export y, upright
+                projection=dict(type="orthographic"),
+            ),
+        ),
+    )
+    return figure
+
+
+st.divider()
+st.subheader("Cabinet in 3D")
+
+if not HAVE_PLOTLY:
+    st.info("plotly is not installed, so this view is unavailable. "
+            "Install it with `uv add plotly`, or `uv pip install plotly` to "
+            "try it without touching pyproject.toml.")
+elif st.checkbox("Draw the 3D view", value=False,
+                 help="Off by default: it is not part of a run."):
+    st.plotly_chart(cabinet_figure())      # width defaults to "stretch"
+    st.caption(
+        f"{cabinet_mesh()['n']} boxes from the cleaned export, one per part, "
+        "drawn corner-to-corner from (x, y, z) to (x+w, y+h, z+d). Axes are "
+        "to scale; y is drawn upright. Each box is the part's envelope, not "
+        "its shape — a device is a block, not a moulding. Advisory only: "
+        "this view passes and fails nothing."
+    )
