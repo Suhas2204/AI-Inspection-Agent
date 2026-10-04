@@ -45,6 +45,7 @@ import json
 from pathlib import Path
 
 from .paths import SCHEMATIC
+from .position import STRUCTURAL
 from .position import frame_of      # one definition of "which frame a part is in"
 
 DATA = SCHEMATIC
@@ -102,6 +103,35 @@ def build_boxes(path: Path = DATA) -> list[dict]:
             "d": clamp_size(dimensions["depth"]),
         })
     return boxes
+
+
+# The 12 triangles of a cuboid, indexing the 8 corners box_corners() emits.
+CUBOID_FACES = [
+    (0, 1, 2), (0, 2, 3),        # z = z        (back)
+    (4, 5, 6), (4, 6, 7),        # z = z + d    (front)
+    (0, 1, 5), (0, 5, 4),        # y = y        (bottom)
+    (2, 3, 7), (2, 7, 6),        # y = y + h    (top)
+    (1, 2, 6), (1, 6, 5),        # x = x + w    (right)
+    (3, 0, 4), (3, 4, 7),        # x = x        (left)
+]
+
+
+def box_corners(box: dict) -> list[tuple[float, float, float]]:
+    """The 8 corners of one box, from (x, y, z) to (x+w, y+h, z+d).
+
+    Corner order is fixed: the four at z, counter-clockwise from (x, y), then
+    the same four at z + d. CUBOID_FACES indexes this order.
+
+    Args:
+        box: A box dict from build_boxes().
+
+    Returns:
+        (x, y, z) triples in mm, in the export's own frame.
+    """
+    x, y, z = box["x"], box["y"], box["z"]
+    x1, y1, z1 = x + box["w"], y + box["h"], z + box["d"]
+    return [(x, y, z), (x1, y, z), (x1, y1, z), (x, y1, z),
+            (x, y, z1), (x1, y, z1), (x1, y1, z1), (x, y1, z1)]
 
 
 # How the viewer paints a box. Here rather than in the page so it can be
@@ -186,6 +216,126 @@ def box_style(box: dict, outcome: str | None = None,
     return box, colour, hover
 
 
+# The overview the view falls back to once the walk is over: every part at
+# real size, coloured by what the run decided about it. These four strings
+# mirror adjudicate.py's vocabulary; they are repeated rather than imported
+# so this module has no opinion about how a verdict is reached, and a test
+# pins them to adjudicate's own constants so the copy cannot drift.
+#
+# Chosen by simulating protanopia, deuteranopia and tritanopia (Machado 2009)
+# and maximising the worst pairwise CIELAB separation over all four views:
+# dE 16.7 at worst, against 7.1 for the obvious Okabe-Ito reading, where
+# purple and grey collapse into each other for deuteranopes.
+OVERVIEW_COLOURS = {
+    "match": "#1F6FB2",              # blue
+    "mismatch": "#E34A33",           # orange-red
+    "abstain": "#FFB400",            # amber
+    "not_in_schematic": "#762A83",   # purple
+}
+NOT_WALKED = "never visited"
+NOT_WALKED_COLOUR = "#A6A6A6"        # grey
+STRUCTURAL_LABEL = "structural"
+STRUCTURAL_COLOUR = "#E3E3E3"        # faded: metalwork, not a result
+
+# position.py picks which frame is which by location prefix and says so is
+# UNVERIFIED. Every reading of this view inherits that, so it is on screen
+# in both modes rather than in a docstring nobody opens.
+FRAME_NOTE = "frame mapping unverified"
+
+
+def structural_tags(path: Path = SCHEMATIC) -> frozenset:
+    """The tags of the metalwork: DIN rails and wire ducts.
+
+    Typed from position.py's STRUCTURAL rather than a tag-prefix rule, so
+    there stays one definition of what counts as metalwork.
+
+    Args:
+        path: Cleaned schematic JSON.
+
+    Returns:
+        A frozenset of designations.
+    """
+    records = json.loads(Path(path).read_text(encoding="utf-8"))["components"]
+    return frozenset(r["designation"] for r in records
+                     if r["type"] in STRUCTURAL)
+
+
+def outcome_groups(boxes: list[dict], results: frozenset,
+                   structural: frozenset) -> list[dict]:
+    """Split the boxes into the groups the overview legend lists.
+
+    Counts are of tags, not boxes, so they are the run's own totals: a strip
+    the run answered once counts once, though it is twenty boxes on screen.
+
+    Args:
+        boxes: Boxes from build_boxes().
+        results: (tag, outcome) pairs the run has decided.
+        structural: Tags of the metalwork.
+
+    Returns:
+        One dict per group, in legend order, with name, colour, boxes and
+        count. Every group is present even when empty, so the legend always
+        lists every outcome rather than only the ones that happened.
+    """
+    outcomes = dict(results)
+    walked = [b for b in boxes if b["tag"] not in structural]
+    groups = []
+    for name, colour in OVERVIEW_COLOURS.items():
+        members = [b for b in walked if outcomes.get(b["tag"]) == name]
+        groups.append({"name": name, "colour": colour, "boxes": members,
+                       "count": len({b["tag"] for b in members})})
+    never = [b for b in walked if b["tag"] not in outcomes]
+    groups.append({"name": NOT_WALKED, "colour": NOT_WALKED_COLOUR,
+                   "boxes": never, "count": len({b["tag"] for b in never})})
+    metal = [b for b in boxes if b["tag"] in structural]
+    groups.append({"name": STRUCTURAL_LABEL, "colour": STRUCTURAL_COLOUR,
+                   "boxes": metal, "count": len({b["tag"] for b in metal})})
+    return groups
+
+
+def legend_label(group: dict) -> str:
+    """The legend entry for one group: its name and its count.
+
+    Args:
+        group: A group dict from outcome_groups().
+
+    Returns:
+        e.g. "match (12)".
+    """
+    return f"{group['name']} ({group['count']})"
+
+
+def mesh_arrays(entries: list[tuple]) -> dict:
+    """Flatten (box, colour, hover) triples into one Mesh3d trace's arrays.
+
+    One merged trace rather than one per box, which keeps the browser
+    responsive at 173 boxes.
+
+    Args:
+        entries: (box, colour, hover) triples.
+
+    Returns:
+        Dict of x/y/z vertex lists, i/j/k triangle indices, per-face colours
+        and per-vertex hover text, in the export's own axes.
+    """
+    xs, ys, zs, text = [], [], [], []
+    i, j, k, facecolour = [], [], [], []
+    for n, (box, colour, hover) in enumerate(entries):
+        for cx, cy, cz in box_corners(box):
+            xs.append(cx)
+            ys.append(cy)
+            zs.append(cz)
+            text.append(hover)
+        offset = 8 * n
+        for a, b, c in CUBOID_FACES:
+            i.append(offset + a)
+            j.append(offset + b)
+            k.append(offset + c)
+            facecolour.append(colour)
+    return {"x": xs, "y": ys, "z": zs, "i": i, "j": j, "k": k,
+            "facecolour": facecolour, "text": text}
+
+
 def representative_index(boxes: list[dict], tag: str) -> int | None:
     """Index of the single box that stands for a tag.
 
@@ -209,6 +359,114 @@ def representative_index(boxes: list[dict], tag: str) -> int | None:
         return None
     return min(found, key=lambda n: (-boxes[n]["y"], boxes[n]["x"],
                                      boxes[n]["z"]))
+
+
+def _apply_layout(figure, legend: bool) -> None:
+    """Put the camera, the axes and the standing caveat on a figure.
+
+    Plotly draws its z axis vertically, so the export's y is passed as the
+    plot's z and the export's z (depth) as the plot's y. The data is not
+    transformed -- only which screen axis each one is drawn on. aspectmode
+    "data" keeps 1 mm the same length on every axis.
+
+    The camera is orthographic and square on to the face. Depth runs toward
+    the viewer, so the camera sits at +z, which is +y once y and z are
+    swapped. Plotly puts +x to the LEFT from there, which would mirror the
+    cabinet and reverse the walking order; reversing the x axis cancels it
+    and keeps the tick labels true.
+
+    Args:
+        figure: The figure to lay out.
+        legend: Whether to show the legend (the overview does, the walk
+            does not -- during a walk there is nothing to key).
+    """
+    figure.update_layout(
+        height=760,
+        margin=dict(l=8, r=8, t=8, b=8),   # 0 clips the y tick labels
+        showlegend=legend,
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01,
+                    bgcolor="rgba(255,255,255,0.78)", borderwidth=0),
+        scene=dict(
+            aspectmode="data",                      # equal scaling, all axes
+            xaxis=dict(title="x — across (mm)", autorange="reversed"),
+            yaxis=dict(title="z — depth (mm)"),
+            zaxis=dict(title="y — height (mm)"),
+            camera=dict(
+                eye=dict(x=0.0, y=2.5, z=0.0),      # out in front of the face
+                center=dict(x=0.0, y=0.0, z=0.0),
+                up=dict(x=0.0, y=0.0, z=1.0),       # export y, upright
+                projection=dict(type="orthographic"),
+            ),
+        ),
+        annotations=[dict(
+            text=FRAME_NOTE, xref="paper", yref="paper",
+            x=0.99, y=0.01, xanchor="right", yanchor="bottom",
+            showarrow=False, font=dict(size=11), opacity=0.75,
+        )],
+    )
+
+
+def build_figure(results: frozenset = frozenset(),
+                 current: str | None = None,
+                 boxes: list[dict] | None = None,
+                 structural: frozenset | None = None):
+    """The 3D view: a walk in progress, or the overview once it is over.
+
+    With a current item the view is a walk: everything unread is a token
+    cube, the current item is green, and what has been answered is drawn
+    true. With no current item the walk is finished, so there is nothing
+    left to give away and every part is drawn at real size, coloured by
+    what the run decided, with a legend counting each outcome.
+
+    Args:
+        results: (tag, outcome) pairs the run has decided.
+        current: Tag of the item the run is on, or None when the walk is
+            over. This is what switches the two modes.
+        boxes: Boxes to draw; built from the cleaned export if not given.
+        structural: Metalwork tags; read from the export if not given.
+
+    Returns:
+        A plotly Figure.
+    """
+    import plotly.graph_objects as go       # lazy: the page guards the import
+
+    boxes = build_boxes() if boxes is None else boxes
+    structural = structural_tags() if structural is None else structural
+    outcomes = dict(results)
+    traces = []
+
+    if current is None:                     # the walk is over: overview
+        for group in outcome_groups(boxes, results, structural):
+            mesh = mesh_arrays([
+                (box, group["colour"],
+                 f"{box['tag']} — {box['frame']}<br>{group['name']}")
+                for box in group["boxes"]])
+            traces.append(go.Mesh3d(
+                x=mesh["x"], y=mesh["z"], z=mesh["y"],   # y upright
+                i=mesh["i"], j=mesh["j"], k=mesh["k"],
+                color=group["colour"],       # uniform, so the swatch is right
+                text=mesh["text"], hoverinfo="text",
+                flatshading=True, showlegend=True,
+                name=legend_label(group), legendgroup=group["name"],
+            ))
+    else:
+        green = representative_index(boxes, current)
+        mesh = mesh_arrays([
+            box_style(box, outcome=outcomes.get(box["tag"]),
+                      structural=box["tag"] in structural,
+                      current=n == green)
+            for n, box in enumerate(boxes)])
+        traces.append(go.Mesh3d(
+            x=mesh["x"], y=mesh["z"], z=mesh["y"],       # y upright
+            i=mesh["i"], j=mesh["j"], k=mesh["k"],
+            facecolor=mesh["facecolour"],
+            text=mesh["text"], hoverinfo="text",
+            flatshading=True, showlegend=False,
+        ))
+
+    figure = go.Figure(data=traces)
+    _apply_layout(figure, legend=current is None)
+    return figure
 
 
 def main() -> None:

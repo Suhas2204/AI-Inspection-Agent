@@ -293,72 +293,24 @@ with tab_metrics:
 # ------------------------------------------------------------------ 3D view
 # Additive. Nothing above this line reads anything defined below it, and the
 # figure is built only when the box is ticked, so a live inspection run pays
-# nothing for this section. plotly is imported defensively: it is not in
-# pyproject.toml, and a hard import would stop the whole page from loading
-# for anyone who has not installed it.
+# nothing for this section. plotly is imported defensively: a hard import
+# would stop the whole page from loading for anyone who has not synced it.
+#
+# The drawing itself lives in model3d.py, not here: it has to be testable
+# without starting Streamlit, and this page stays the thin front end its
+# own docstring claims it is.
 try:                                            # noqa: E402 -- section-local
-    import plotly.graph_objects as go
+    import plotly                               # noqa: F401 -- probe only
     HAVE_PLOTLY = True
 except ModuleNotFoundError:
     HAVE_PLOTLY = False
 
-import json                                    # noqa: E402
-from redlining.model3d import (                # noqa: E402 -- kept with its use
-    CURRENT_MM,
-    PLACEHOLDER_MM,
-    box_style,
+from redlining.model3d import (                 # noqa: E402 -- kept with its use
+    FRAME_NOTE,
     build_boxes,
-    representative_index,
+    build_figure,
+    structural_tags,
 )
-from redlining.position import STRUCTURAL       # noqa: E402 -- one definition
-
-# The 12 triangles of a cuboid, indexing the 8 corners box_corners() emits.
-CUBOID_FACES = [
-    (0, 1, 2), (0, 2, 3),        # z = z        (back)
-    (4, 5, 6), (4, 6, 7),        # z = z + d    (front)
-    (0, 1, 5), (0, 5, 4),        # y = y        (bottom)
-    (2, 3, 7), (2, 7, 6),        # y = y + h    (top)
-    (1, 2, 6), (1, 6, 5),        # x = x + w    (right)
-    (3, 0, 4), (3, 4, 7),        # x = x        (left)
-]
-
-
-def box_corners(box: dict) -> list[tuple[float, float, float]]:
-    """The 8 corners of one box, from (x, y, z) to (x+w, y+h, z+d).
-
-    Corner order is fixed: the four at z, counter-clockwise from (x, y), then
-    the same four at z + d. CUBOID_FACES indexes this order.
-
-    Args:
-        box: A box dict from build_boxes().
-
-    Returns:
-        (x, y, z) triples in mm, in the export's own frame.
-    """
-    x, y, z = box["x"], box["y"], box["z"]
-    x1, y1, z1 = x + box["w"], y + box["h"], z + box["d"]
-    return [(x, y, z), (x1, y, z), (x1, y1, z), (x, y1, z),
-            (x, y, z1), (x1, y, z1), (x1, y1, z1), (x, y1, z1)]
-
-
-@st.cache_data(show_spinner=False)
-def structural_tags() -> frozenset:
-    """The tags of the metalwork: DIN rails and wire ducts.
-
-    These are never checklist items, so they never get an attempt and would
-    otherwise stay masked for the whole run, taking the cabinet's outline
-    with them. They carry nothing to give away either -- a rail is not a
-    part anyone reads -- so they are always drawn true.
-
-    Typed from position.py's STRUCTURAL rather than a tag-prefix rule, so
-    there stays one definition of what counts as metalwork.
-
-    Returns:
-        A frozenset of designations.
-    """
-    records = json.loads(Path(SCHEMATIC).read_text(encoding="utf-8"))
-    return frozenset(r["designation"] for r in records["components"]
-                     if r["type"] in STRUCTURAL)
 
 
 def answered_results(run_log) -> frozenset:
@@ -372,125 +324,40 @@ def answered_results(run_log) -> frozenset:
         run_log: The RunLog this session is writing.
 
     Returns:
-        A frozenset of (tag, outcome) pairs, so it can key the mesh cache.
+        A frozenset of (tag, outcome) pairs, so it can key the figure cache.
     """
     return frozenset((a.item, a.outcome) for a in run_log.final_attempts)
 
 
 @st.cache_data(show_spinner=False)
-def cabinet_mesh(results: frozenset = frozenset(),
-                 current: str | None = None) -> dict:
-    """Flatten every box into the arrays one Mesh3d trace needs.
-
-    One merged trace rather than 173, which keeps the browser responsive.
-    Cached because the cleaned export does not change while the page is up.
+def cabinet_figure(results: frozenset, current: str | None):
+    """The figure for this run state, cached so a rerun does not rebuild it.
 
     Args:
-        results: (tag, outcome) pairs the run has decided. Those, plus the
-            structural tags, are drawn at real size in their frame colour.
-        current: Tag of the item the run is on. Exactly one of its boxes is
-            drawn green, whatever else that tag would have been drawn as.
-
-    Returns:
-        Dict of x/y/z vertex lists, i/j/k triangle indices, per-face colours,
-        per-vertex hover text, the box count, and how many of them are still
-        masked. Coordinates stay in the export's own axes; the swap to screen
-        axes happens at plot time.
-    """
-    raw = build_boxes()
-    outcomes = dict(results)
-    structural = structural_tags()            # metalwork is never masked
-    green = representative_index(raw, current) if current else None
-    boxes = []
-    xs, ys, zs, text = [], [], [], []
-    i, j, k, facecolour = [], [], [], []
-
-    for n, source in enumerate(raw):
-        box, colour, label = box_style(
-            source,
-            outcome=outcomes.get(source["tag"]),
-            structural=source["tag"] in structural,
-            current=n == green,
-        )
-        boxes.append(box)
-        for cx, cy, cz in box_corners(box):
-            xs.append(cx)
-            ys.append(cy)
-            zs.append(cz)
-            text.append(label)
-        offset = 8 * n
-        for a, b, c in CUBOID_FACES:
-            i.append(offset + a)
-            j.append(offset + b)
-            k.append(offset + c)
-            facecolour.append(colour)
-
-    return {"x": xs, "y": ys, "z": zs, "i": i, "j": j, "k": k,
-            "facecolour": facecolour, "text": text, "n": len(boxes),
-            "masked": sum(1 for b in raw
-                          if b["tag"] not in outcomes
-                          and b["tag"] not in structural),
-            "green": green}
-
-
-def cabinet_figure(results: frozenset = frozenset(),
-                   current: str | None = None):
-    """Build the Mesh3d figure, with y upright and all three axes to scale.
-
-    Plotly draws its z axis vertically, so the export's y is passed as the
-    plot's z and the export's z (depth) as the plot's y. The data is not
-    transformed -- only which screen axis each one is drawn on. aspectmode
-    "data" is what keeps 1 mm the same length on every axis; without it
-    Plotly stretches each axis to fill the cube and the cabinet comes out
-    the wrong shape.
-
-    The camera is orthographic and square on to the face: no perspective, so
-    two parts of equal width measure equally on screen wherever they sit, and
-    a rail reads as a straight line rather than a converging one.
-
-    Depth runs toward the viewer -- the ED2 rails sit at z=40..75 and the
-    devices clipped to them at z=95 -- so the face is the high-z side and the
-    camera belongs at +z, which is +y once y and z are swapped for the screen.
-    Viewed from there Plotly puts +x to the LEFT, which would mirror the
-    cabinet and reverse the walking order. Reversing the x axis cancels that:
-    the camera stays in front, x reads left to right, and the tick labels keep
-    their true values. Verified by rendering, not by reasoning about
-    handedness -- the mirrored version is easy to produce and hard to notice.
-
-    Args:
-        results: (tag, outcome) pairs the run has decided. Those and the
-            rails and ducts are drawn true; everything else becomes a
-            uniform grey cube.
-        current: Tag of the item the run is on, drawn green.
+        results: (tag, outcome) pairs the run has decided.
+        current: Tag of the item the run is on, or None once it is over.
 
     Returns:
         A plotly Figure.
     """
-    mesh = cabinet_mesh(results, current)
-    figure = go.Figure(data=[go.Mesh3d(
-        x=mesh["x"], y=mesh["z"], z=mesh["y"],      # y upright, z into depth
-        i=mesh["i"], j=mesh["j"], k=mesh["k"],
-        facecolor=mesh["facecolour"],
-        text=mesh["text"], hoverinfo="text",
-        flatshading=True,
-    )])
-    figure.update_layout(
-        height=760,
-        margin=dict(l=8, r=8, t=8, b=8),   # 0 clips the y tick labels
-        scene=dict(
-            aspectmode="data",                      # equal scaling, all axes
-            xaxis=dict(title="x — across (mm)", autorange="reversed"),
-            yaxis=dict(title="z — depth (mm)"),
-            zaxis=dict(title="y — height (mm)"),
-            camera=dict(
-                eye=dict(x=0.0, y=2.5, z=0.0),      # out in front of the face
-                center=dict(x=0.0, y=0.0, z=0.0),
-                up=dict(x=0.0, y=0.0, z=1.0),       # export y, upright
-                projection=dict(type="orthographic"),
-            ),
-        ),
-    )
-    return figure
+    return build_figure(results, current)
+
+
+@st.cache_data(show_spinner=False)
+def cabinet_counts(results: frozenset) -> dict:
+    """How many boxes there are and how many are still unread.
+
+    Args:
+        results: (tag, outcome) pairs the run has decided.
+
+    Returns:
+        Dict with "n" and "masked".
+    """
+    boxes, structural = build_boxes(), structural_tags()
+    decided = dict(results)
+    return {"n": len(boxes),
+            "masked": sum(1 for b in boxes if b["tag"] not in structural
+                          and b["tag"] not in decided)}
 
 
 st.divider()
@@ -498,35 +365,37 @@ st.subheader("Cabinet in 3D")
 
 if not HAVE_PLOTLY:
     st.info("plotly is not installed, so this view is unavailable. "
-            "Install it with `uv add plotly`, or `uv pip install plotly` to "
-            "try it without touching pyproject.toml.")
+            "Install it with `uv add plotly`.")
 elif st.checkbox("Draw the 3D view", value=False,
                  help="Off by default: it is not part of a run."):
     results = answered_results(log)
     current = items[item_index].tag if item_index < len(items) else None
     st.plotly_chart(cabinet_figure(results, current))   # width -> "stretch"
+
+    counts = cabinet_counts(results)
     st.caption(
-        f"{cabinet_mesh(results, current)['n']} boxes from the cleaned "
-        "export, one "
-        "per part, "
-        "drawn corner-to-corner from (x, y, z) to (x+w, y+h, z+d). Axes are "
-        "to scale; y is drawn upright. Each box is the part's envelope, not "
-        "its shape — a device is a block, not a moulding. Advisory only: "
-        "this view passes and fails nothing."
+        f"{counts['n']} boxes from the cleaned export, one per part, drawn "
+        "corner-to-corner from (x, y, z) to (x+w, y+h, z+d). Axes are to "
+        "scale; y is drawn upright. Each box is the part's envelope, not its "
+        "shape — a device is a block, not a moulding. Advisory only: this "
+        f"view passes and fails nothing, and \"{FRAME_NOTE}\" on it means "
+        "which frame is left and which is right is position.py's guess."
     )
-    masked = cabinet_mesh(results, current)["masked"]
-    if masked:
+
+    if current is None:
         st.caption(
-            f"{masked} of them are not read yet, so each is drawn as the same "
-            f"{PLACEHOLDER_MM:.0f} mm grey cube on the part's own centre, with "
-            "no tag and nothing in its hover. The rails and ducts are drawn "
-            "true throughout — they are metalwork, not items to read. The "
-            "real size is kept in the data, not on the screen. Read the "
-            "cabinet, not this picture."
+            "The walk is over, so every part is drawn at its real size and "
+            "coloured by what the run decided. The legend counts tags, not "
+            "boxes: a strip answered once counts once, though it is twenty "
+            "boxes on screen. Colours were picked by simulating the three "
+            "kinds of colour blindness, not by eye."
         )
-    if current:
+    else:
         st.caption(
-            f"The green box is the item you are on now, drawn at "
-            f"{CURRENT_MM:.0f} mm so it can be found. It carries no tag: it "
-            "says where to go, not what you will find there."
+            f"{counts['masked']} parts are not read yet, so each is drawn as "
+            "the same small grey cube on the part's own centre, with no tag "
+            "and nothing in its hover. The green box is the item you are on "
+            "now: it says where to go, not what you will find. Rails and "
+            "ducts are drawn true throughout. Read the cabinet, not this "
+            "picture."
         )

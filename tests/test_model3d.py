@@ -10,6 +10,14 @@ import pytest
 
 from redlining.checklist import load_checklist
 from redlining.model3d import (
+    FRAME_NOTE,
+    NOT_WALKED,
+    OVERVIEW_COLOURS,
+    STRUCTURAL_LABEL,
+    build_figure,
+    legend_label,
+    outcome_groups,
+    structural_tags,
     CURRENT_COLOUR,
     CURRENT_HOVER,
     CURRENT_MM,
@@ -252,3 +260,164 @@ def test_centred_cube_keeps_the_real_size_reachable(boxes):
     cube = centred_cube(box, PLACEHOLDER_MM)
     assert cube["tag"] == box["tag"]
     assert box["w"] != PLACEHOLDER_MM or box["h"] != PLACEHOLDER_MM
+
+
+# ------------------------------------------------------- the overview legend
+@pytest.fixture(scope="module")
+def structural():
+    """Tags of the metalwork, which is never a result."""
+    return structural_tags()
+
+
+@pytest.fixture
+def run_results(items):
+    """A part-finished run: one of each outcome, the rest never visited.
+
+    One of the four is a terminal strip, so every count here is a count of
+    tags rather than of boxes -- the strip is twenty boxes on screen.
+    """
+    strip = next(i for i in items if i.kind == "strip")
+    devices = [i.tag for i in items if i.kind != "strip"][:3]
+    return frozenset(zip([strip.tag] + devices,
+                         ["match", "mismatch", "abstain",
+                          "not_in_schematic"]))
+
+
+def test_legend_counts_equal_the_runs_totals(boxes, structural, run_results):
+    """Each legend count is the number of tags the run gave that verdict.
+
+    Counts are of tags, not boxes, or a strip answered once would report as
+    twenty and the legend would disagree with the run's own report.
+    """
+    expected = {}
+    for tag, outcome in run_results:
+        expected[outcome] = expected.get(outcome, 0) + 1
+
+    groups = {g["name"]: g for g in outcome_groups(boxes, run_results,
+                                                   structural)}
+    for outcome in OVERVIEW_COLOURS:
+        assert groups[outcome]["count"] == expected.get(outcome, 0), outcome
+
+
+def test_legend_counts_add_up_to_every_tag(boxes, structural, run_results):
+    """Nothing is counted twice and nothing is left out."""
+    groups = outcome_groups(boxes, run_results, structural)
+    assert sum(g["count"] for g in groups) == len({b["tag"] for b in boxes})
+
+
+def test_never_visited_is_everything_not_answered(boxes, structural,
+                                                  run_results):
+    """The grey count is the rest of the walk, metalwork excluded."""
+    answered = {tag for tag, _ in run_results}
+    walkable = {b["tag"] for b in boxes if b["tag"] not in structural}
+    groups = {g["name"]: g for g in outcome_groups(boxes, run_results,
+                                                   structural)}
+    assert groups[NOT_WALKED]["count"] == len(walkable - answered)
+
+
+def test_structural_is_its_own_group_not_an_outcome(boxes, structural,
+                                                    run_results):
+    """Metalwork is never scored, so it never lands in a verdict group."""
+    groups = {g["name"]: g for g in outcome_groups(boxes, run_results,
+                                                   structural)}
+    assert groups[STRUCTURAL_LABEL]["count"] == len(structural)
+    for outcome in OVERVIEW_COLOURS:
+        for box in groups[outcome]["boxes"]:
+            assert box["tag"] not in structural
+
+
+def test_every_outcome_is_listed_even_at_zero(boxes, structural):
+    """A legend that hides empty outcomes would read as 'none happened'."""
+    groups = {g["name"]: g for g in outcome_groups(boxes, frozenset(),
+                                                   structural)}
+    for outcome in OVERVIEW_COLOURS:
+        assert outcome in groups
+        assert groups[outcome]["count"] == 0
+
+
+def test_legend_label_carries_name_and_count():
+    """The count has to reach the legend text, not just the group dict."""
+    assert legend_label({"name": "match", "count": 12}) == "match (12)"
+
+
+def test_outcome_names_match_adjudicate(boxes):
+    """The copied vocabulary must not drift from adjudicate.py's own."""
+    from redlining.adjudicate import (ABSTAIN, MATCH, MISMATCH,
+                                      NOT_IN_SCHEMATIC)
+    assert set(OVERVIEW_COLOURS) == {MATCH, MISMATCH, ABSTAIN,
+                                     NOT_IN_SCHEMATIC}
+
+
+def test_palette_is_distinct():
+    """Two outcomes sharing a colour would be one outcome on screen."""
+    from redlining.model3d import NOT_WALKED_COLOUR, STRUCTURAL_COLOUR
+    colours = list(OVERVIEW_COLOURS.values()) + [NOT_WALKED_COLOUR,
+                                                 STRUCTURAL_COLOUR]
+    assert len(set(colours)) == len(colours)
+
+
+# ------------------------------------------------------------- the figure
+def test_overview_legend_shows_every_outcome_with_its_count(boxes, structural,
+                                                            run_results):
+    """The counts reach the built figure, not just the helper."""
+    pytest.importorskip("plotly")
+    figure = build_figure(run_results, None, boxes=boxes,
+                          structural=structural)
+    names = [trace.name for trace in figure.data]
+    groups = outcome_groups(boxes, run_results, structural)
+    assert names == [legend_label(g) for g in groups]
+    assert figure.layout.showlegend is True
+
+
+def test_walk_mode_has_no_legend(boxes, structural, items, run_results):
+    """Mid-walk there is nothing to key, and a legend would name the parts."""
+    pytest.importorskip("plotly")
+    figure = build_figure(run_results, items[4].tag, boxes=boxes,
+                          structural=structural)
+    assert figure.layout.showlegend is False
+
+
+def test_overview_draws_every_part_at_real_size(boxes, structural):
+    """Once the walk is over nothing is withheld."""
+    pytest.importorskip("plotly")
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural)
+    drawn = sum(len(trace.x) for trace in figure.data)
+    assert drawn == 8 * len(boxes)        # eight corners each, nothing dropped
+
+
+@pytest.mark.parametrize("current", [None, "-1Q1"])
+def test_frame_mapping_label_is_always_present(boxes, structural, current):
+    """The caveat is on screen in both modes, not only in the overview."""
+    pytest.importorskip("plotly")
+    figure = build_figure(frozenset(), current, boxes=boxes,
+                          structural=structural)
+    texts = [a.text for a in figure.layout.annotations]
+    assert FRAME_NOTE in texts, f"{FRAME_NOTE!r} missing, got {texts}"
+
+
+def test_frame_mapping_label_sits_in_a_corner(boxes, structural):
+    """A label in the middle of the cabinet would be worse than none."""
+    pytest.importorskip("plotly")
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural)
+    note = next(a for a in figure.layout.annotations if a.text == FRAME_NOTE)
+    assert note.xref == "paper" and note.yref == "paper"
+    assert note.x > 0.9 and note.y < 0.1
+
+
+def test_legend_counts_tags_not_boxes(boxes, structural, items):
+    """A strip answered once counts once, though it is twenty boxes.
+
+    This is the case that separates counting tags from counting boxes; the
+    device-only fixtures cannot tell the two apart.
+    """
+    strip = next(i for i in items if i.kind == "strip")
+    members = [b for b in boxes if b["tag"] == strip.tag]
+    assert len(members) > 1, "strip is one box -- this test proves nothing"
+
+    groups = {g["name"]: g
+              for g in outcome_groups(boxes, frozenset({(strip.tag, "match")}),
+                                      structural)}
+    assert groups["match"]["count"] == 1
+    assert len(groups["match"]["boxes"]) == len(members)
