@@ -10,7 +10,13 @@ import pytest
 
 from redlining.checklist import load_checklist
 from redlining.model3d import (
+    BODY_COLOUR,
     FRAME_NOTE,
+    is_shaped,
+    part_kind,
+    part_types,
+    plain_cube_pieces,
+    shape_pieces,
     NOT_WALKED,
     OVERVIEW_COLOURS,
     STRUCTURAL_LABEL,
@@ -363,7 +369,7 @@ def test_overview_legend_shows_every_outcome_with_its_count(boxes, structural,
     pytest.importorskip("plotly")
     figure = build_figure(run_results, None, boxes=boxes,
                           structural=structural)
-    names = [trace.name for trace in figure.data]
+    names = [trace.name for trace in figure.data if trace.showlegend]
     groups = outcome_groups(boxes, run_results, structural)
     assert names == [legend_label(g) for g in groups]
     assert figure.layout.showlegend is True
@@ -377,13 +383,20 @@ def test_walk_mode_has_no_legend(boxes, structural, items, run_results):
     assert figure.layout.showlegend is False
 
 
-def test_overview_draws_every_part_at_real_size(boxes, structural):
-    """Once the walk is over nothing is withheld."""
+def test_overview_draws_every_part(boxes, structural):
+    """Once the walk is over nothing is withheld and nothing is dropped.
+
+    Shaped parts carry more than eight corners each, so this counts parts
+    through the groups rather than counting vertices.
+    """
     pytest.importorskip("plotly")
+    groups = outcome_groups(boxes, frozenset(), structural)
+    assert sum(len(g["boxes"]) for g in groups) == len(boxes)
+
     figure = build_figure(frozenset(), None, boxes=boxes,
                           structural=structural)
-    drawn = sum(len(trace.x) for trace in figure.data)
-    assert drawn == 8 * len(boxes)        # eight corners each, nothing dropped
+    drawn = sum(len(trace.x) for trace in figure.data if trace.showlegend)
+    assert drawn >= 8 * len(boxes)
 
 
 @pytest.mark.parametrize("current", [None, "-1Q1"])
@@ -421,3 +434,279 @@ def test_legend_counts_tags_not_boxes(boxes, structural, items):
                                       structural)}
     assert groups["match"]["count"] == 1
     assert len(groups["match"]["boxes"]) == len(members)
+
+
+# ------------------------------------------------------------- the shapes
+SHAPE_KINDS = ["rail", "duct", "terminal", "breaker", "relay", "other"]
+
+
+@pytest.mark.parametrize("kind", SHAPE_KINDS)
+def test_every_shape_stays_inside_its_real_box(boxes, kind):
+    """No shape may stick out of the part it stands for.
+
+    A protruding toggle or screw would report a size the part does not have,
+    and in a view that withholds sizes that is the whole game.
+    """
+    for box in boxes:
+        x0, y0, z0 = box["x"], box["y"], box["z"]
+        x1, y1, z1 = x0 + box["w"], y0 + box["h"], z0 + box["d"]
+        for verts, _tris, _role, _edges in shape_pieces(box, kind):
+            for vx, vy, vz in verts:
+                assert x0 - 1e-9 <= vx <= x1 + 1e-9, (kind, box["tag"], "x")
+                assert y0 - 1e-9 <= vy <= y1 + 1e-9, (kind, box["tag"], "y")
+                assert z0 - 1e-9 <= vz <= z1 + 1e-9, (kind, box["tag"], "z")
+
+
+def test_real_parts_stay_inside_their_real_boxes(boxes):
+    """The same, for the kind each part is actually drawn as."""
+    types = part_types()
+    for box in boxes:
+        kind = part_kind(box["tag"], types.get(box["tag"], ""))
+        x1, y1, z1 = (box["x"] + box["w"], box["y"] + box["h"],
+                      box["z"] + box["d"])
+        for verts, _tris, _role, _edges in shape_pieces(box, kind):
+            for vx, vy, vz in verts:
+                assert box["x"] - 1e-9 <= vx <= x1 + 1e-9
+                assert box["y"] - 1e-9 <= vy <= y1 + 1e-9
+                assert box["z"] - 1e-9 <= vz <= z1 + 1e-9
+
+
+def test_every_shape_has_some_solid(boxes):
+    """A shape that collapses to nothing would be invisible, not subtle."""
+    types = part_types()
+    for box in boxes:
+        kind = part_kind(box["tag"], types.get(box["tag"], ""))
+        pieces = shape_pieces(box, kind)
+        assert pieces
+        assert all(len(v) >= 8 and len(t) >= 12 for v, t, _r, _e in pieces)
+
+
+def test_unanswered_parts_are_still_uniform_cubes(boxes, structural):
+    """Shape must not leak what size already does not.
+
+    Every unanswered part stays one plain cube of the same edge, whatever
+    kind of part it happens to be.
+    """
+    for box in boxes:
+        if box["tag"] in structural:
+            continue
+        assert not is_shaped(None, False, False)
+        drawn, _colour, _hover = box_style(box)
+        assert (drawn["w"], drawn["h"], drawn["d"]) == (PLACEHOLDER_MM,) * 3
+        pieces = plain_cube_pieces(drawn)
+        assert len(pieces) == 1
+        verts, tris, _role, _edges = pieces[0]
+        assert len(verts) == 8 and len(tris) == 12
+
+
+def test_the_current_item_is_not_shaped():
+    """The green box says where to go; a shape would say what is there."""
+    assert is_shaped("match", False, True) is False
+    assert is_shaped(None, True, True) is False
+
+
+def test_shaping_follows_answering(boxes, structural):
+    """Only answered or structural parts may be shaped."""
+    assert is_shaped("match", False, False) is True
+    assert is_shaped("abstain", False, False) is True
+    assert is_shaped(None, True, False) is True
+    assert is_shaped(None, False, False) is False
+
+
+def test_walk_draws_exactly_the_geometry_the_rules_allow(boxes, structural):
+    """End to end: the parts trace holds cubes for everything unrevealed.
+
+    Counted rather than eyeballed, so a shape that escaped the rule would
+    change the vertex total and fail here.
+    """
+    pytest.importorskip("plotly")
+    types = part_types()
+    current = next(b["tag"] for b in boxes if b["tag"] not in structural)
+    green = representative_index(boxes, current)
+
+    expected = 0
+    for n, box in enumerate(boxes):
+        is_struct = box["tag"] in structural
+        if is_shaped(None, is_struct, n == green):
+            kind = part_kind(box["tag"], types.get(box["tag"], ""))
+            expected += sum(len(v) for v, _t, _r, _e in shape_pieces(box, kind))
+        else:
+            expected += 8
+
+    figure = build_figure(frozenset(), current, boxes=boxes,
+                          structural=structural, types=types)
+    parts = next(tr for tr in figure.data if tr.name == "parts")
+    assert len(parts.x) == expected
+
+
+def test_overview_shapes_everything(boxes, structural):
+    """With the walk over, every part takes its real shape."""
+    pytest.importorskip("plotly")
+    types = part_types()
+    expected = sum(
+        sum(len(v) for v, _t, _r, _e in
+            shape_pieces(box, part_kind(box["tag"],
+                                        types.get(box["tag"], ""))))
+        for box in boxes)
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural, types=types)
+    drawn = sum(len(tr.x) for tr in figure.data if tr.showlegend)
+    assert drawn == expected
+
+
+def test_the_view_has_a_plate_and_a_cabinet_outline(boxes, structural):
+    """The backdrop is there, and neither piece joins the legend."""
+    pytest.importorskip("plotly")
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural)
+    assert any(tr.name == "plate" for tr in figure.data)
+    assert all(not tr.showlegend for tr in figure.data
+               if tr.name in {"plate", ""})
+
+
+def test_shading_is_soft_and_projection_orthographic(boxes, structural):
+    """Flat shading and perspective are both switched off deliberately."""
+    pytest.importorskip("plotly")
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural)
+    for trace in figure.data:
+        if trace.type == "mesh3d":
+            assert trace.flatshading is False
+    assert figure.layout.scene.camera.projection.type == "orthographic"
+
+
+# ------------------------------------------------------ plate, walls, camera
+def test_no_part_sticks_out_of_the_plate(boxes):
+    """Every part, rails included, sits inside the mounting plate."""
+    from redlining.model3d import mounting_plate
+    plate = mounting_plate(boxes)
+    px1, py1 = plate["x"] + plate["w"], plate["y"] + plate["h"]
+    for box in boxes:
+        assert plate["x"] <= box["x"] and box["x"] + box["w"] <= px1, box["tag"]
+        assert plate["y"] <= box["y"] and box["y"] + box["h"] <= py1, box["tag"]
+
+
+def test_the_walls_reach_the_side_panel_parts(boxes):
+    """A wall is placed where its parts already are, not the other way round.
+
+    Nothing is moved to make the parts touch: the wall goes immediately
+    outboard of the outermost part of that side panel.
+    """
+    from redlining.model3d import side_walls
+    walls = {w["frame"]: w for w in side_walls(boxes)}
+    assert set(walls) == {"left side panel", "right side panel"}
+    for frame, wall in walls.items():
+        members = [b for b in boxes if b["frame"] == frame]
+        assert members
+        outer = max(b["x"] + b["w"] for b in members)
+        assert wall["box"]["x"] == outer          # flush, no gap and no overlap
+
+
+def test_walls_do_not_swallow_other_frames(boxes):
+    """The gap between the two frames is 5 mm; a wall has to fit in it."""
+    from redlining.model3d import side_walls
+    for wall in side_walls(boxes):
+        w0 = wall["box"]["x"]
+        w1 = w0 + wall["box"]["w"]
+        for box in boxes:
+            assert not (box["x"] < w1 and w0 < box["x"] + box["w"]), box["tag"]
+
+
+def test_frame_tints_do_not_overlap(boxes):
+    """Two tinted patches at one depth flicker against each other."""
+    from redlining.model3d import frame_regions
+    spans = sorted(((r["box"]["x"], r["box"]["x"] + r["box"]["w"])
+                    for r in frame_regions(boxes)))
+    for (_a0, a1), (b0, _b1) in zip(spans, spans[1:]):
+        assert a1 <= b0 + 1e-9
+
+
+def test_each_frame_tint_is_a_tint_not_the_frame_colour(boxes):
+    """Slightly tinted: nearer the plate than the frame's own colour."""
+    from redlining.model3d import PLATE_COLOUR, frame_regions
+
+    def rgb(c):
+        return [int(c[i:i + 2], 16) for i in (1, 3, 5)]
+
+    for region in frame_regions(boxes):
+        tint, plate = rgb(region["colour"]), rgb(PLATE_COLOUR)
+        full = rgb(FRAME_COLOURS[region["frame"]])
+        to_plate = sum(abs(a - b) for a, b in zip(tint, plate))
+        to_full = sum(abs(a - b) for a, b in zip(tint, full))
+        assert to_plate < to_full, region["frame"]
+
+
+def test_the_halo_is_one_size_for_every_item(boxes):
+    """The ring marks a place; it must not report a size."""
+    from redlining.model3d import halo_box
+    sizes = set()
+    for box in boxes[:40]:
+        drawn, _c, _h = box_style(box, current=True)
+        halo = halo_box(drawn)
+        sizes.add((round(halo["w"], 6), round(halo["h"], 6),
+                   round(halo["d"], 6)))
+        for axis, size in (("x", "w"), ("y", "h"), ("z", "d")):
+            centre = drawn[axis] + drawn[size] / 2.0
+            assert abs((halo[axis] + halo[size] / 2.0) - centre) < 1e-9
+    assert len(sizes) == 1                       # same ring for every part
+    assert sizes.pop()[0] > CURRENT_MM           # and bigger than the cube
+
+
+def test_walk_has_a_halo_and_the_overview_does_not(boxes, structural):
+    """The ring belongs to the current item, and the overview has none."""
+    pytest.importorskip("plotly")
+    walk = build_figure(frozenset(), "-1Q1", boxes=boxes, structural=structural)
+    assert any(tr.name == "halo" for tr in walk.data)
+    over = build_figure(frozenset(), None, boxes=boxes, structural=structural)
+    assert not any(tr.name == "halo" for tr in over.data)
+
+
+def test_both_camera_views_are_offered_and_orthographic(boxes, structural):
+    """The view opens square on, and the angled button keeps rails straight."""
+    pytest.importorskip("plotly")
+    from redlining.model3d import ANGLED_CAMERA, FRONT_CAMERA
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural)
+    assert figure.layout.scene.camera.projection.type == "orthographic"
+    assert FRONT_CAMERA["projection"]["type"] == "orthographic"
+    assert ANGLED_CAMERA["projection"]["type"] == "orthographic"
+    labels = [b.label for m in figure.layout.updatemenus for b in m.buttons]
+    assert labels == ["Front view", "Angled view"]
+
+
+def test_backdrop_never_joins_the_legend(boxes, structural):
+    """Plate, tints and walls are scenery; only outcomes are keyed."""
+    pytest.importorskip("plotly")
+    figure = build_figure(frozenset(), None, boxes=boxes,
+                          structural=structural)
+    scenery = {"plate", "frame tint", "side wall", "halo", ""}
+    for trace in figure.data:
+        if trace.name in scenery:
+            assert not trace.showlegend, trace.name
+
+
+def test_the_halo_is_the_same_size_whatever_the_part(boxes, structural):
+    """Built from the token cube, never from the real box.
+
+    The two parts below differ by orders of magnitude in volume. If the ring
+    were ever sized from the part itself, the big one would wear a bigger
+    ring and the view would report a size it is withholding.
+    """
+    pytest.importorskip("plotly")
+    walkable = [b for b in boxes if b["tag"] not in structural]
+    small = min(walkable, key=lambda b: b["w"] * b["h"] * b["d"])
+    large = max(walkable, key=lambda b: b["w"] * b["h"] * b["d"])
+    assert large["w"] * large["h"] * large["d"] > \
+        20 * small["w"] * small["h"] * small["d"]      # 36x in this export
+
+    def ring(tag):
+        figure = build_figure(frozenset(), tag, boxes=boxes,
+                             structural=structural)
+        halo = next(tr for tr in figure.data if tr.name == "halo")
+        axes = []
+        for values in (halo.x, halo.y, halo.z):
+            real = [v for v in values if v is not None]
+            axes.append(round(max(real) - min(real), 6))
+        return tuple(axes)
+
+    assert ring(small["tag"]) == ring(large["tag"])
