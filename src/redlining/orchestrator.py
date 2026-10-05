@@ -81,7 +81,12 @@ from typing import Any, Protocol
 
 from .adjudicate import ABSTAIN, STRIP_TAGS, Adjudicator
 from .checklist import Item
-from .normalise import DIGIT_WORDS, TEEN_TENS_WORDS, compact
+from .normalise import (
+    DIGIT_WORDS,
+    TEEN_TENS_WORDS,
+    compact,
+    strip_lead_in,
+)
 from .report import RunLog
 from .session import MAX_REASKS, Read, step_item
 
@@ -364,8 +369,7 @@ _SIGN_WORDS = frozenset({"minus", "dash", "negative", "hyphen"})
 _COUNT_LABELS = frozenset({"l", "n", "pe", "bracket", "brackets"})
 
 CLARIFY = ("Sorry, I did not follow that. Could you say it again -- either "
-           "where you want to go, or the reading on its own, with no other "
-           "words around it.")
+           "where you want to go, or what the label reads.")
 
 
 def _is_reading(utterance: str) -> bool:
@@ -381,16 +385,22 @@ def _is_reading(utterance: str) -> bool:
     that only submitted well-formed readings would quietly swallow exactly
     the defects this study measures.
 
+    A carrier phrase in front of the reading is allowed -- "it says minus 1
+    F1" is one reading, not a sentence about one -- and it is recognised with
+    normalise.strip_lead_in, the same fixed list the normaliser strips with.
+    Sharing that list is the point: a phrase this accepts is a phrase the
+    normaliser will take off, so the classifier cannot wave through an
+    utterance that then fails to normalise for a reason only it knew about.
+
     Args:
         utterance: The trainee's words.
 
     Returns:
-        True if it looks like a reading and nothing else. False for an empty
-        utterance, and for anything wrapped in other words ("it says minus 1
-        F1"), which is asked for again rather than trimmed -- trimming is
-        editing, and nothing here edits a trainee's words.
+        True if it looks like a reading, with or without a carrier phrase in
+        front. False for an empty utterance and for anything else.
     """
     words = [w for w in re.split(r"[^A-Za-z0-9]+", utterance) if w]
+    words, _lead_in = strip_lead_in(words)
     if not words:
         return False
     for word in words:
@@ -419,9 +429,10 @@ class MockLLM:
     said.
 
     An utterance it does not recognise returns a Reply asking for it again.
-    That includes a reading wrapped in other words: "it says minus 1 F1" is
-    asked for again rather than trimmed down to the tag, because trimming is
-    editing and the orchestrator judges the words as they arrived.
+    A carrier phrase in front of a reading IS recognised -- "it says minus 1
+    F1" is one reading -- because normalise.CARRIER_PHRASES strips it on a
+    fixed list and records what it took off. The model still carries no
+    words: it says only that a reading happened.
 
     Attributes:
         calls: Every decision it has made, for tests to inspect.

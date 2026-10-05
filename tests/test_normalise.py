@@ -3,6 +3,7 @@
 import pytest
 
 from redlining.normalise import (
+    CARRIER_PHRASES,
     DIGIT_WORDS,
     LEADING_FILLER,
     MAX_TOKEN_RUN,
@@ -15,8 +16,10 @@ from redlining.normalise import (
     normalise_rating,
     normalise_tag,
     runaway,
+    strip_lead_in,
     strip_leading_filler,
 )
+from redlining.normalise import _pre
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -265,3 +268,115 @@ def test_strip_leading_filler_leaves_a_clean_token_list_alone():
     assert strip_leading_filler(["so", "minus", "1"]) == ["minus", "1"]
     assert strip_leading_filler(["so"]) == []
     assert strip_leading_filler([]) == []
+
+
+# ------------------------------------------------- carrier phrases
+
+@pytest.mark.parametrize("carrier", [
+    "it says", "it reads", "I see", "I read", "the tag is", "that's",
+])
+def test_a_carrier_phrase_normalises_to_the_same_value(carrier):
+    """The reading is the reading, however the trainee introduced it."""
+    bare = normalise_tag("minus 1 F1")
+    carried = normalise_tag(f"{carrier} minus 1 F1")
+
+    assert carried.value == bare.value == "-1F1"
+    assert carried.well_formed == bare.well_formed is True
+
+
+@pytest.mark.parametrize("carrier", [
+    "it says", "it reads", "I see", "I read", "the tag is", "that's",
+])
+def test_what_was_stripped_is_on_the_record(carrier):
+    """Nothing is removed silently: raw keeps it all, stripped names the cut.
+
+    This is what separates a fixed strip from a model tidying a transcript.
+    A reviewer can see the trainee's whole utterance, the value that was
+    judged, and exactly which words sit between the two.
+    """
+    carried = normalise_tag(f"{carrier} minus 1 F1")
+
+    assert carried.raw == f"{carrier} minus 1 F1"
+    assert carried.stripped
+    assert " ".join(carried.stripped) == " ".join(_pre(carrier))
+    assert not normalise_tag("minus 1 F1").stripped
+
+
+def test_a_misread_behind_a_carrier_phrase_is_still_a_misread():
+    """Stripping the lead-in must not repair what follows it.
+
+    The whole point of the fixed list is that it removes address, not
+    content. "-9F9" is a real tag and the wrong one here; "minus 9 F 9 9 9"
+    is not a tag at all. Neither becomes acceptable by being introduced
+    politely.
+    """
+    wrong_tag = normalise_tag("it says minus 9 F 9")
+    assert wrong_tag.value == "-9F9" == normalise_tag("minus 9 F 9").value
+    assert wrong_tag.well_formed
+
+    malformed = normalise_tag("the tag is minus 9 F 9 9 9")
+    assert not malformed.well_formed
+    assert malformed.value == normalise_tag("minus 9 F 9 9 9").value
+
+
+def test_a_carrier_phrase_in_the_middle_is_still_an_error():
+    """Leading-only, like the filler. A lead-in inside a reading is a defect."""
+    result = normalise_tag("minus 1 it says F1")
+    assert not result.well_formed
+    assert not result.stripped
+
+
+def test_a_carrier_phrase_with_no_reading_behind_it_reads_as_nothing():
+    """"It says" alone is not a reading, and is not guessed at."""
+    result = normalise_tag("it says")
+    assert result.value == ""
+    assert not result.well_formed
+    assert result.stripped == ["it", "says"]
+
+
+def test_filler_and_a_carrier_can_both_be_stripped():
+    """A trainee can hesitate and address you in the same breath."""
+    result = normalise_tag("So, it says minus 1 F1")
+    assert result.value == "-1F1"
+    assert result.stripped == ["so", "it", "says"]
+
+
+def test_every_carrier_phrase_is_more_than_one_token():
+    """The invariant that makes carriers safe where single words would not be.
+
+    "i", "s" and "is" would each be read as content on their own -- a single
+    letter normalises to a letter. They are only ever removed as part of a
+    phrase, so a one-token carrier would be a bug, and this is what stops
+    one being added by accident.
+    """
+    for phrase in CARRIER_PHRASES:
+        assert len(_pre(phrase)) >= 2, phrase
+
+
+def test_carrier_phrases_are_a_closed_list():
+    """A phrase that is not on the list is not stripped, however similar.
+
+    "that is" reads like "that's" and is deliberately absent: the list is
+    closed, and extending it is a decision someone has to make on purpose.
+    """
+    result = normalise_tag("that is minus 1 f1")
+    assert not result.stripped
+    assert result.value != "-1F1"
+
+
+def test_strip_lead_in_reports_both_halves():
+    """kept and removed together account for every token given."""
+    kept, removed = strip_lead_in(["it", "says", "minus", "1", "f1"])
+    assert kept == ["minus", "1", "f1"]
+    assert removed == ["it", "says"]
+
+    kept, removed = strip_lead_in(["minus", "1", "f1"])
+    assert kept == ["minus", "1", "f1"]
+    assert removed == []
+
+
+def test_strip_lead_in_keeps_the_case_it_was_given():
+    """session.count_tokens passes uppercase tokens straight through."""
+    kept, removed = strip_lead_in(["IT", "SAYS", "L", "3"])
+    assert kept == ["L", "3"]
+    assert removed == ["IT", "SAYS"]

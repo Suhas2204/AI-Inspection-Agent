@@ -73,6 +73,37 @@ NOISE_WORDS = {"the", "and", "a", "um", "uh", "er", "please", "okay", "ok"}
 # could read as content (test_normalise.py enforces that much).
 LEADING_FILLER = {"so"}
 
+# Carrier phrases: what a trainee says AROUND a reading when they are talking
+# to someone rather than reading into a recorder. "It says minus 1 F1" is one
+# reading, not a sentence about a reading, and the words in front of it are
+# address, not content.
+#
+# A FIXED list, matched only at the FRONT, and every match is reported in
+# Normalised.stripped so the removal is on the record rather than invisible.
+# That is what separates this from a model tidying up a transcript: a fixed
+# rule can be audited, repeated, and argued with; a judgement cannot. Nothing
+# here chooses WHICH reading to keep -- it only removes words that cannot be
+# part of any reading.
+#
+# Unlike LEADING_FILLER these are not measured from the corpus, because the
+# corpus has none: run 20260927-130613 was recorded one reading at a time
+# with no one to address. They come from the conversational front end
+# (orchestrator.py), where a trainee speaks to the agent, and the list is
+# closed on purpose -- extend it from utterances people actually said, not
+# from imagination.
+#
+# Written as phrases and tokenised with the same _pre() the readings go
+# through, so "that's" matches whatever _pre() makes of it rather than
+# whatever an apostrophe happens to do here.
+CARRIER_PHRASES = (
+    "it says",
+    "it reads",
+    "i see",
+    "i read",
+    "the tag is",
+    "that's",
+)
+
 # 'a' is both an article and the letter A. In part-number mode it is a letter.
 PART_LETTER_HOMOPHONES = {"a": "A", "ay": "A", "eh": "A", "be": "B", "bee": "B",
                           "see": "C", "sea": "C", "cee": "C", "dee": "D",
@@ -125,6 +156,11 @@ class Normalised:
         well_formed: Shape looks plausible -- NOT "exists in the schematic".
         reason: Why it is not well formed, if so.
         tokens: The pieces that built the value.
+        stripped: Lead-in words removed from the front before normalising --
+            filler and carrier phrases. THE log of what this module took
+            out: raw keeps every word the trainee said, value is what was
+            judged, and this is the difference between them. Empty when
+            nothing was removed, which is the usual case.
     """
     raw: str
     value: str
@@ -132,6 +168,7 @@ class Normalised:
     well_formed: bool             # shape is plausible -- NOT 'exists in schematic'
     reason: str = ""
     tokens: list[str] = field(default_factory=list)
+    stripped: list[str] = field(default_factory=list)
 
 
 def _pre(text: str) -> list[str]:
@@ -148,6 +185,13 @@ def _pre(text: str) -> list[str]:
     text = text.lower().replace("-", " ").replace("_", " ")
     text = re.sub(r"[^a-z0-9\s.+/]", " ", text)
     return [t for t in text.split() if t]
+
+
+# CARRIER_PHRASES, put through _pre so they are compared token for token
+# against tokens built the same way. Longest first, so "the tag is" is tried
+# before any shorter phrase that could be a prefix of it.
+_CARRIERS = tuple(sorted((tuple(_pre(phrase)) for phrase in CARRIER_PHRASES),
+                         key=len, reverse=True))
 
 
 def _expand_repeats(tokens: list[str]) -> list[str]:
@@ -173,28 +217,69 @@ def _expand_repeats(tokens: list[str]) -> list[str]:
     return out
 
 
-def strip_leading_filler(tokens: list[str]) -> list[str]:
-    """Drop sentence-opener filler from the front of a token list.
+def _bare(token: str) -> str:
+    """One token, lowercased and stripped of trailing punctuation.
 
-    Only the front, and only LEADING_FILLER. See that set for why the two
-    restrictions matter.
+    Args:
+        token: A token from _pre(), or an uppercase one from
+            session.count_tokens.
+
+    Returns:
+        The comparable form.
+    """
+    return token.strip(".,;:!?").lower()
+
+
+def strip_lead_in(tokens: list[str]) -> tuple[list[str], list[str]]:
+    """Remove leading filler and carrier phrases, and say what was removed.
+
+    Both lists are leading-only, and both are closed. Applied in a loop, so
+    "so, it says minus 1 F1" loses both the filler and the carrier -- a
+    trainee can hesitate and address you in the same breath.
+
+    Nothing is removed from the middle of a reading. A stray word there is
+    evidence the read went wrong, and dropping it would launder the defect
+    this project measures (CONTEXT §7); "minus 12 so f3" still fails, loudly.
 
     Args:
         tokens: Tokens from _pre(), or any token list. Case and trailing
             punctuation are ignored, so session.count_tokens can pass its
-            uppercase tokens through unchanged.
+            uppercase tokens straight through.
 
     Returns:
-        The tokens with any run of leading filler removed, in the case they
-        were given in. A transcript that
-        is nothing but filler comes back empty, which reads downstream as
-        "nothing was read" -- the right answer for a clip with no tag in it.
+        (kept, removed), both in the case they were given in. A transcript
+        that is nothing but lead-in comes back with kept empty, which reads
+        downstream as "nothing was read" -- the right answer for an utterance
+        with no reading in it.
     """
-    first = 0
-    while (first < len(tokens)
-           and tokens[first].strip(".,;:!?").lower() in LEADING_FILLER):
-        first += 1
-    return tokens[first:]
+    kept, removed = list(tokens), []
+    moved = True
+    while moved and kept:
+        moved = False
+        if _bare(kept[0]) in LEADING_FILLER:
+            removed.append(kept.pop(0))
+            moved = True
+            continue
+        for phrase in _CARRIERS:                  # longest first
+            head = [_bare(t) for t in kept[:len(phrase)]]
+            if head == list(phrase):
+                removed.extend(kept[:len(phrase)])
+                del kept[:len(phrase)]
+                moved = True
+                break
+    return kept, removed
+
+
+def strip_leading_filler(tokens: list[str]) -> list[str]:
+    """The kept half of strip_lead_in, for callers with nowhere to put the rest.
+
+    Args:
+        tokens: As strip_lead_in.
+
+    Returns:
+        The tokens with any lead-in removed.
+    """
+    return strip_lead_in(tokens)[0]
 
 
 def _longest_run(tokens: list[str]) -> tuple[str, int]:
@@ -267,7 +352,7 @@ def normalise_part(raw: str) -> Normalised:
         Normalised(kind="part"), e.g. value "A9F03116". well_formed is False
         for unknown tokens, nothing recognised, or an implausible shape.
     """
-    tokens = strip_leading_filler(_expand_repeats(_pre(raw)))
+    tokens, stripped = strip_lead_in(_expand_repeats(_pre(raw)))
     out: list[str] = []
     unknown: list[str] = []
 
@@ -299,17 +384,17 @@ def normalise_part(raw: str) -> Normalised:
 
     stuck = runaway(raw, "part")
     if stuck:
-        return Normalised(raw, value, "part", False, stuck, out)
+        return Normalised(raw, value, "part", False, stuck, out, stripped)
 
     if unknown:
         return Normalised(raw, value, "part", False,
-                          f"unrecognised token(s): {', '.join(unknown)}", out)
+                          f"unrecognised token(s): {', '.join(unknown)}", out, stripped)
     if not value:
-        return Normalised(raw, "", "part", False, "nothing recognised", out)
+        return Normalised(raw, "", "part", False, "nothing recognised", out, stripped)
     if not PART_RE.fullmatch(value):
         return Normalised(raw, value, "part", False,
-                          f"shape implausible for a part number: {value!r}", out)
-    return Normalised(raw, value, "part", True, "", out)
+                          f"shape implausible for a part number: {value!r}", out, stripped)
+    return Normalised(raw, value, "part", True, "", out, stripped)
 
 
 def normalise_rating(raw: str) -> Normalised:
@@ -326,7 +411,7 @@ def normalise_rating(raw: str) -> Normalised:
         Normalised(kind="rating"). well_formed is False for unknown tokens or
         nothing recognised.
     """
-    tokens = strip_leading_filler(_expand_repeats(_pre(raw)))
+    tokens, stripped = strip_lead_in(_expand_repeats(_pre(raw)))
     out: list[str] = []
     unknown: list[str] = []
 
@@ -354,14 +439,14 @@ def normalise_rating(raw: str) -> Normalised:
 
     stuck = runaway(raw, "rating")
     if stuck:
-        return Normalised(raw, value, "rating", False, stuck, out)
+        return Normalised(raw, value, "rating", False, stuck, out, stripped)
 
     if unknown:
         return Normalised(raw, value, "rating", False,
-                          f"unrecognised token(s): {', '.join(unknown)}", out)
+                          f"unrecognised token(s): {', '.join(unknown)}", out, stripped)
     if not value:
-        return Normalised(raw, "", "rating", False, "nothing recognised", out)
-    return Normalised(raw, value, "rating", True, "", out)
+        return Normalised(raw, "", "rating", False, "nothing recognised", out, stripped)
+    return Normalised(raw, value, "rating", True, "", out, stripped)
 
 
 def normalise_tag(raw: str) -> Normalised:
@@ -380,7 +465,7 @@ def normalise_tag(raw: str) -> Normalised:
     # Whisper punctuates: 'minus 5F3.' arrives with the stop attached to the
     # token. Found in the first live run, 31 Aug -- it cost 2 of 10 items.
     tokens = [t.strip(".,;:!?") for t in _expand_repeats(_pre(raw))]
-    tokens = strip_leading_filler([t for t in tokens if t])
+    tokens, stripped = strip_lead_in([t for t in tokens if t])
     out: list[str] = []
     unknown: list[str] = []
 
@@ -409,20 +494,20 @@ def normalise_tag(raw: str) -> Normalised:
 
     stuck = runaway(raw, "tag")
     if stuck:
-        return Normalised(raw, value, "tag", False, stuck, out)
+        return Normalised(raw, value, "tag", False, stuck, out, stripped)
 
     if unknown:
         return Normalised(raw, value, "tag", False,
-                          f"unrecognised token(s): {', '.join(unknown)}", out)
+                          f"unrecognised token(s): {', '.join(unknown)}", out, stripped)
     if not body:
-        return Normalised(raw, "", "tag", False, "nothing recognised", out)
+        return Normalised(raw, "", "tag", False, "nothing recognised", out, stripped)
     # Both real shapes in this cabinet: '-10F1' (62 tags) and '-D1' (38 tags).
     # Strip tags '-X1'..'-X8' fall under the second.
     if not re.fullmatch(r"-[0-9]{1,2}[A-Z]{1,2}[0-9]{1,2}|-[A-Z]{1,2}[0-9]{1,3}",
                         value):
         return Normalised(raw, value, "tag", False,
-                          f"shape implausible for a tag: {value!r}", out)
-    return Normalised(raw, value, "tag", True, "", out)
+                          f"shape implausible for a tag: {value!r}", out, stripped)
+    return Normalised(raw, value, "tag", True, "", out, stripped)
 
 
 def compact(text: str) -> str:

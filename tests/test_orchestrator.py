@@ -413,18 +413,76 @@ def test_submit_reading_takes_no_reading_in_its_schema(adj, checklist,
     assert schema["parameters"]["required"] == []
 
 
-def test_a_reading_wrapped_in_other_words_is_asked_for_again(adj, checklist,
-                                                             tmp_path):
-    """Not trimmed down to the tag -- trimming is editing, and nothing edits.
+def test_a_carrier_phrase_reaches_the_same_verdict_as_the_bare_reading(
+        adj, checklist, tmp_path):
+    """"It says minus 1 F1" and "minus 1 F1" are judged identically.
 
-    "it says minus 1 F1" would normalise to nothing usable, so MockLLM asks
-    for the reading on its own rather than submitting words that would
-    abstain and burn an attempt.
+    The carrier phrase is taken off by normalise.CARRIER_PHRASES -- a fixed
+    list, applied at the front only, recording what it removed -- so the two
+    utterances differ in what the trainee said and in nothing that was
+    judged.
     """
-    orc = Orchestrator(adj, checklist[:1], RunLog(root=tmp_path, run_id="wrap"),
+    item = checklist[0]
+    bare = drive(adj, [item], RunLog(root=tmp_path, run_id="bare"),
+                 ["where next", "minus 1 F1"])
+    carried = drive(adj, [item], RunLog(root=tmp_path, run_id="carried"),
+                    ["where next", "it says minus 1 F1"])
+
+    one, = recorded(bare.log)
+    two, = recorded(carried.log)
+    for field in VERDICT_FIELDS:
+        assert one[field] == two[field], field
+
+    # What the trainee said is still what is kept, and the two differ there.
+    assert one["raw_transcript"] == "minus 1 F1"
+    assert two["raw_transcript"] == "it says minus 1 F1"
+
+
+@pytest.mark.parametrize("carrier", [
+    "it says", "it reads", "I see", "I read", "the tag is", "that's",
+])
+def test_every_carrier_phrase_is_routed_as_a_reading(adj, checklist, tmp_path,
+                                                     carrier):
+    """MockLLM classifies all six as a reading, not as an unclear request."""
+    orc = Orchestrator(adj, checklist[:1],
+                       RunLog(root=tmp_path, run_id=f"c{len(carrier)}"),
                        MockLLM())
     orc.call("next_location")
-    out = orc.say("it says minus 1 F1")
+    out = orc.say(f"{carrier} minus 1 F1")
+
+    assert out.get("tool") == "submit_reading", out
+    attempt, = recorded(orc.log)
+    assert attempt["normalised"] == "-1F1"
+
+
+def test_a_misread_behind_a_carrier_phrase_still_fails(adj, checklist,
+                                                       tmp_path):
+    """Stripping the lead-in must not repair what follows it.
+
+    -1Q1 is expected at position 1 and carries a planted fault. Saying
+    "it says minus 9 F 9" politely does not make it right: the verdict is
+    the same one the bare misread gets, and it is not a match.
+    """
+    item = checklist[0]
+    bare = drive(adj, [item], RunLog(root=tmp_path, run_id="mis-bare"),
+                 ["where next", "minus 9 F 9"])
+    carried = drive(adj, [item], RunLog(root=tmp_path, run_id="mis-carried"),
+                    ["where next", "it says minus 9 F 9"])
+
+    one, = recorded(bare.log)
+    two, = recorded(carried.log)
+    assert one["outcome"] == two["outcome"] != MATCH
+    for field in VERDICT_FIELDS:
+        assert one[field] == two[field], field
+
+
+def test_a_carrier_phrase_with_nothing_behind_it_is_asked_for_again(
+        adj, checklist, tmp_path):
+    """"It says" on its own is not a reading and is not guessed at."""
+    orc = Orchestrator(adj, checklist[:1], RunLog(root=tmp_path, run_id="bare-c"),
+                       MockLLM())
+    orc.call("next_location")
+    out = orc.say("it says")
 
     assert "reply" in out and "tool" not in out
     assert not (orc.log.attempts_path.exists() and recorded(orc.log))
