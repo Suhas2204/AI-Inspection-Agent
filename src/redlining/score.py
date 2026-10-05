@@ -43,8 +43,16 @@ import csv
 import json
 from pathlib import Path
 
+from .stats import fmt_rate
+
 DETECTABLE_YES = "yes"
 BANDS = (1, 2, 3)
+
+# Outcome names from adjudicate.py, spelled here rather than imported so
+# that scoring a saved report never depends on the adjudicator's current
+# constants -- a report is a record of what a past run decided.
+MATCH = "match"
+ABSTAIN = "abstain"
 
 
 def load_run(run_dir: Path) -> dict:
@@ -209,6 +217,15 @@ def score(report: dict, faults: list[dict]) -> dict:
     denom = len(caught) + len(missed)
     n_flags = len(caught) + len(false_flags)
 
+    # k/n for every rate below, so each one can carry a confidence interval
+    # and so a reader can see what it was computed from. The rates
+    # themselves are untouched; these are the counts behind them.
+    #
+    # The outcome tallies come from the report's own items rather than its
+    # summary block: a saved report always lists its items, while the
+    # summary fields were added later and are absent from older ones.
+    outcomes = [a.get("outcome") for a in report.get("items", [])]
+
     per_band = {}
     for b in BANDS:
         c = sum(1 for f in caught if band_of(f, final) == str(b))
@@ -229,14 +246,22 @@ def score(report: dict, faults: list[dict]) -> dict:
         "duration_s": report.get("duration_s"),
         "abstain_rate": report.get("abstain_rate"),
         "abstain_ceiling": report.get("abstain_ceiling"),
+        "abstain_k": sum(1 for o in outcomes if o == ABSTAIN),
+        "abstain_n": len(outcomes),
+        "correct": sum(1 for o in outcomes if o == MATCH),
+        "correct_n": len(outcomes),
         "planted": len(planted),
         "swaps": sum(1 for f in planted if len(positions(f)) > 1),
         "caught": len(caught),
         "missed": len(missed),
         "not_walked": len(not_walked),
         "detection_rate": len(caught) / denom if denom else None,
+        "detection_k": len(caught),
+        "detection_n": denom,
         "false_flags": len(false_flags),
         "precision": len(caught) / n_flags if n_flags else None,
+        "precision_k": len(caught),
+        "precision_n": n_flags,
         "per_band": per_band,
         "known_miss": len(known_miss),
         "known_miss_flagged": len(known_miss_flagged),
@@ -296,21 +321,36 @@ def report_text(s: dict) -> str:
         f"  caught               : {s['caught']}",
         f"  missed               : {s['missed']}",
         f"  not walked           : {s['not_walked']}",
-        f"  detection rate       : {pct(s['detection_rate'])}",
+        f"  detection rate       : {pct(s['detection_rate'])}"
+        f"   {fmt_rate(s['detection_k'], s['detection_n'])}",
         "",
         "Metric 1 - redline precision (provisional, see module docstring)",
         f"  false flags          : {s['false_flags']}",
-        f"  precision            : {pct(s['precision'])}",
+        f"  precision            : {pct(s['precision'])}"
+        f"   {fmt_rate(s['precision_k'], s['precision_n'])}",
         "",
         "Metric 3 - abstention",
         f"  abstain rate         : {pct(s['abstain_rate'])}"
-        f"  (ceiling {pct(s['abstain_ceiling'])})",
+        f"  (ceiling {pct(s['abstain_ceiling'])})"
+        f"   {fmt_rate(s['abstain_k'], s['abstain_n'])}",
+        "",
+        "Correct outcomes",
+        f"  matched the schematic: "
+        f"{pct(s['correct'] / s['correct_n'] if s['correct_n'] else None)}"
+        f"   {fmt_rate(s['correct'], s['correct_n'])}",
+        "",
+        "  k/n and 95% Wilson intervals. The percentages are unchanged; the "
+        "intervals are",
+        "  there because 10 planted faults cannot pin a detection rate down "
+        "narrowly, and a",
+        "  bare percentage invites a comparison this run cannot support.",
         "",
         "By band",
     ]
     for b, v in s["per_band"].items():
         L.append(f"  band {b}: {v['caught']} caught, {v['missed']} missed"
-                 f"  ({pct(v['rate'])})")
+                 f"  ({pct(v['rate'])})"
+                 f"   {fmt_rate(v['caught'], v['caught'] + v['missed'])}")
     L += [
         "",
         f"Known misses carried: {s['known_miss']} "

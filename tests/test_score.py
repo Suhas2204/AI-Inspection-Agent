@@ -11,7 +11,7 @@ these fix the definitions, not the cabinet.
 
 import pytest
 
-from redlining.score import score
+from redlining.score import report_text, score
 
 
 def attempt(item: str, flagged: bool, band: int = 1, attempt_no: int = 1) -> dict:
@@ -109,3 +109,35 @@ def test_blank_item_b_is_a_single_position_fault():
     """An empty item_b must not invent a second position."""
     s = score(run(attempt("-X8", False)), [fault("-X8", "")])
     assert (s["missed"], s["not_walked"], s["swaps"]) == (1, 0, 0)
+
+
+# ------------------------------------------- the counts behind the rates
+
+def test_every_rate_carries_the_counts_it_was_computed_from():
+    """k/n must reproduce the rate exactly, or the interval beside it lies."""
+    s = score(run(attempt("-X1", True), attempt("-X2", False),
+                  attempt("-X9", True)),
+              [fault("-X1"), fault("-X2")])
+
+    assert s["detection_k"] / s["detection_n"] == s["detection_rate"]
+    assert s["precision_k"] / s["precision_n"] == s["precision"]
+    assert (s["detection_k"], s["detection_n"]) == (1, 2)
+    assert (s["precision_k"], s["precision_n"]) == (1, 2)
+
+
+def test_the_per_band_counts_reproduce_the_per_band_rate():
+    """Same requirement one level down, where the denominators are tiny."""
+    s = score(run(attempt("-X1", True, band=1), attempt("-X2", False, band=2)),
+              [fault("-X1"), fault("-X2")])
+    for band in s["per_band"].values():
+        n = band["caught"] + band["missed"]
+        if n:
+            assert band["caught"] / n == band["rate"]
+
+
+def test_an_empty_denominator_stays_none_and_prints_n_slash_a():
+    """No planted fault walked means no rate, not a rate of zero."""
+    s = score(run(attempt("-X9", False)), [fault("-X1")])
+    assert s["detection_rate"] is None
+    assert s["detection_n"] == 0
+    assert "n/a" in report_text(s)

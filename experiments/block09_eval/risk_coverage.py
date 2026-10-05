@@ -61,6 +61,7 @@ from redlining.paths import DECISIONS, PROCESSED, SCHEMATIC
 from redlining.report import FLAGGED
 from redlining.score import load_faults, positions, score
 from redlining.session import MAX_REASKS, parse_counts
+from redlining.stats import fmt_rate, wilson_ci
 
 FAULTS = DECISIONS / "faults.csv"
 PNG = PROCESSED / "risk_coverage.png"
@@ -68,6 +69,24 @@ PDF_DE = PROCESSED / "risiko_abdeckung.pdf"
 
 # A committed flag. Abstain is deliberately absent -- see the docstring.
 FLAG_OUTCOMES = {MISMATCH, NOT_IN_SCHEMATIC}
+
+# Every rate this script reports, as (label, numerator key, denominator key).
+# Named once so the intervals table and the CSV cannot disagree about what a
+# rate was computed from -- and so that a rate added later without its k/n is
+# a visible omission rather than a silent one.
+#
+# The sweep table above prints these as bare percentages, which is what makes
+# it readable across 12 settings; the intervals table is where each one is
+# spelled out. 70 positions and 10 planted faults mean these intervals are
+# wide and overlap heavily from setting to setting. That IS the finding: this
+# run cannot separate most of the settings it sweeps.
+RATES = (
+    ("coverage", "coverage_k", "coverage_n"),
+    ("abstain", "abstain_k", "abstain_n"),
+    ("risk", "risk_k", "risk_n"),
+    ("detection", "detection_k", "detection_n"),
+    ("precision", "precision_k", "precision_n"),
+)
 
 # The swept settings. TAG_EDIT_MAX from 0 (never blame the microphone: an
 # unknown tag is always reported as not-in-schematic) up to 3 (blame it as far
@@ -329,17 +348,30 @@ def evaluate(report: dict, attempts_by_item: dict[str, list[dict]],
         "walked": len(walked),
         "covered": len(covered),
         "coverage": len(covered) / len(walked) if walked else None,
+        "coverage_k": len(covered),
+        "coverage_n": len(walked),
         "abstain_rate": 1 - (len(covered) / len(walked)) if walked else None,
+        "abstain_k": len(walked) - len(covered),
+        "abstain_n": len(walked),
         "truncated": sum(1 for w in walks.values() if w["truncated"]),
         "scoreable": len(scoreable),
         "silent_misses": len(silent_misses),
         "false_flags_pos": len(false_flags),
         "risk": ((len(silent_misses) + len(false_flags)) / len(scoreable)
                  if scoreable else None),
+        "risk_k": len(silent_misses) + len(false_flags),
+        "risk_n": len(scoreable),
         "planted_rows": s["planted"],
         "caught": s["caught"],
         "detection_rate": s["detection_rate"],
+        # k/n for the two rates score.py owns, taken from its own counts so
+        # the interval cannot be computed from a different denominator than
+        # the rate beside it.
+        "detection_k": s["caught"],
+        "detection_n": s["caught"] + s["missed"],
         "precision": s["precision"],
+        "precision_k": s["caught"],
+        "precision_n": s["caught"] + s["false_flags"],
         "silent_miss_items": sorted(silent_misses),
         "false_flag_items": sorted(false_flags),
     }
@@ -791,6 +823,61 @@ def reading(rows: list[dict], report: dict) -> list[str]:
     return L
 
 
+def intervals_table(rows: list[dict]) -> str:
+    """Render every rate of every swept setting as k/n with a 95% interval.
+
+    One line per (setting, rate) rather than extra columns on the sweep
+    table: five intervals per row would be 150 characters wide and unreadable
+    at exactly the moment a reader most needs to compare them.
+
+    Args:
+        rows: Swept settings from evaluate().
+
+    Returns:
+        The table, grouped by setting.
+    """
+    head = (f"  {'setting':<22}{'rate':<11}{'k/n':<8}{'value':>7}"
+            f"  {'95% CI (Wilson)':<16}")
+    L = [head, "  " + "-" * (len(head) - 2)]
+    for row in rows:
+        default = (row["tag_edit_max"] == TAG_EDIT_MAX
+                   and row["max_reasks"] == MAX_REASKS)
+        setting = (f"tag_max {row['tag_edit_max']}, reasks "
+                   f"{row['max_reasks']}" + (" *" if default else ""))
+        first = True
+        for label, k_key, n_key in RATES:
+            L.append(f"  {(setting if first else ''):<22}{label:<11}"
+                     f"{fmt_rate(row[k_key], row[n_key])}")
+            first = False
+        L.append("")
+    L += ["  * the settings this run was performed at.",
+          "  Wilson score intervals, 95%. They are wide because the run is "
+          "small: 70 positions and 10 planted fault rows. Intervals that "
+          "overlap across settings are not evidence that the settings "
+          "differ, and most of these overlap.",
+          "  No interval is given for the character error rate anywhere in "
+          "this study -- a CER is not a binomial proportion. See "
+          "experiments/stats.py."]
+    return "\n".join(L)
+
+
+def with_intervals(row: dict) -> dict:
+    """One sweep row plus the bounds of every rate's interval, for the CSV.
+
+    Args:
+        row: A swept setting from evaluate().
+
+    Returns:
+        A new dict: the row, then <rate>_ci_lo and <rate>_ci_hi per rate.
+    """
+    out = dict(row)
+    for label, k_key, n_key in RATES:
+        lo, hi = wilson_ci(row[k_key], row[n_key])
+        out[f"{label}_ci_lo"] = lo
+        out[f"{label}_ci_hi"] = hi
+    return out
+
+
 def write_csv(rows: list[dict], path: Path) -> None:
     """Write the sweep as a CSV, list columns joined with spaces.
 
@@ -799,7 +886,7 @@ def write_csv(rows: list[dict], path: Path) -> None:
         path: Output CSV.
     """
     flat = [{k: (" ".join(v) if isinstance(v, list) else v)
-             for k, v in r.items()} for r in rows]
+             for k, v in with_intervals(r).items()} for r in rows]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(flat[0]))
@@ -843,6 +930,9 @@ def main() -> None:
 
     print()
     print(table(rows, report))
+    print()
+    print("Rates with 95% confidence intervals")
+    print(intervals_table(rows))
 
     print("\nChecked:")
     print("\n".join(verify_replay(report, rows, attempts_by_item,
