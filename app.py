@@ -289,3 +289,113 @@ with tab_metrics:
                 "metrics 2 and 3).")
     st.caption("Time per cabinet (metric 6) is on the Run tab. Nothing is "
                "reported here that is not on the CONTEXT metrics list.")
+
+# ------------------------------------------------------------------ 3D view
+# Additive. Nothing above this line reads anything defined below it, and the
+# figure is built only when the box is ticked, so a live inspection run pays
+# nothing for this section. plotly is imported defensively: a hard import
+# would stop the whole page from loading for anyone who has not synced it.
+#
+# The drawing itself lives in model3d.py, not here: it has to be testable
+# without starting Streamlit, and this page stays the thin front end its
+# own docstring claims it is.
+try:                                            # noqa: E402 -- section-local
+    import plotly                               # noqa: F401 -- probe only
+    HAVE_PLOTLY = True
+except ModuleNotFoundError:
+    HAVE_PLOTLY = False
+
+from redlining.model3d import (                 # noqa: E402 -- kept with its use
+    FRAME_NOTE,
+    build_boxes,
+    build_figure,
+    structural_tags,
+)
+
+
+def answered_results(run_log) -> frozenset:
+    """What this run has decided about each tag it has read.
+
+    A tag counts as answered whatever the verdict: an abstain is something
+    the run learned about the part, not the absence of a read. The outcome
+    is adjudicate.py's, carried through as the plain string the run logged.
+
+    Args:
+        run_log: The RunLog this session is writing.
+
+    Returns:
+        A frozenset of (tag, outcome) pairs, so it can key the figure cache.
+    """
+    return frozenset((a.item, a.outcome) for a in run_log.final_attempts)
+
+
+@st.cache_data(show_spinner=False)
+def cabinet_figure(results: frozenset, current: str | None):
+    """The figure for this run state, cached so a rerun does not rebuild it.
+
+    Args:
+        results: (tag, outcome) pairs the run has decided.
+        current: Tag of the item the run is on, or None once it is over.
+
+    Returns:
+        A plotly Figure.
+    """
+    return build_figure(results, current)
+
+
+@st.cache_data(show_spinner=False)
+def cabinet_counts(results: frozenset) -> dict:
+    """How many boxes there are and how many are still unread.
+
+    Args:
+        results: (tag, outcome) pairs the run has decided.
+
+    Returns:
+        Dict with "n" and "masked".
+    """
+    boxes, structural = build_boxes(), structural_tags()
+    decided = dict(results)
+    return {"n": len(boxes),
+            "masked": sum(1 for b in boxes if b["tag"] not in structural
+                          and b["tag"] not in decided)}
+
+
+st.divider()
+st.subheader("Cabinet in 3D")
+
+if not HAVE_PLOTLY:
+    st.info("plotly is not installed, so this view is unavailable. "
+            "Install it with `uv add plotly`.")
+elif st.checkbox("Draw the 3D view", value=False,
+                 help="Off by default: it is not part of a run."):
+    results = answered_results(log)
+    current = items[item_index].tag if item_index < len(items) else None
+    st.plotly_chart(cabinet_figure(results, current))   # width -> "stretch"
+
+    counts = cabinet_counts(results)
+    st.caption(
+        f"{counts['n']} boxes from the cleaned export, one per part, drawn "
+        "corner-to-corner from (x, y, z) to (x+w, y+h, z+d). Axes are to "
+        "scale; y is drawn upright. Each box is the part's envelope, not its "
+        "shape — a device is a block, not a moulding. Advisory only: this "
+        f"view passes and fails nothing, and \"{FRAME_NOTE}\" on it means "
+        "which frame is left and which is right is position.py's guess."
+    )
+
+    if current is None:
+        st.caption(
+            "The walk is over, so every part is drawn at its real size and "
+            "coloured by what the run decided. The legend counts tags, not "
+            "boxes: a strip answered once counts once, though it is twenty "
+            "boxes on screen. Colours were picked by simulating the three "
+            "kinds of colour blindness, not by eye."
+        )
+    else:
+        st.caption(
+            f"{counts['masked']} parts are not read yet, so each is drawn as "
+            "the same small grey cube on the part's own centre, with no tag "
+            "and nothing in its hover. The green box is the item you are on "
+            "now: it says where to go, not what you will find. Rails and "
+            "ducts are drawn true throughout. Read the cabinet, not this "
+            "picture."
+        )
