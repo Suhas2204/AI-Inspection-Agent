@@ -43,7 +43,7 @@ import csv
 import json
 from pathlib import Path
 
-from .stats import fmt_rate
+from .stats import fmt_ci, fmt_rate, wilson_ci
 
 DETECTABLE_YES = "yes"
 BANDS = (1, 2, 3)
@@ -382,8 +382,31 @@ def report_text(s: dict) -> str:
     return "\n".join(L)
 
 
+def tex(text: str) -> str:
+    """Escape what LaTeX would otherwise read as markup.
+
+    Only the percent sign so far, which is all these tables contain. It is
+    not cosmetic: unescaped, a "%" starts a LaTeX comment and swallows the
+    rest of its own row, including the row separator. Every percentage this
+    table has ever printed was doing that. It surfaced when the confidence
+    interval was added, because the interval became the next thing to
+    vanish into the comment.
+
+    Args:
+        text: Cell text.
+
+    Returns:
+        The text, safe to paste into a tabular.
+    """
+    return text.replace("%", "\\%")
+
+
 def latex(s: dict) -> str:
     """Render the headline metrics as a LaTeX tabular for the thesis.
+
+    Three columns: the metric, its value, and its 95% interval. A row with
+    no interval to give -- a plain count -- leaves the third cell empty
+    rather than filling it with something that reads as a measurement.
 
     Args:
         s: The dict returned by score().
@@ -391,21 +414,46 @@ def latex(s: dict) -> str:
     Returns:
         A tabular environment, to be wrapped in a table and captioned.
     """
+    def rate(value, k: int, n: int) -> tuple[str, str]:
+        """One rate as a value cell and an interval cell.
+
+        Args:
+            value: The rate as score() computed it, or None. Printed as it
+                always was; the interval is beside it, never instead of it.
+            k: Numerator.
+            n: Denominator.
+
+        Returns:
+            (value cell, interval cell).
+        """
+        lo, hi = wilson_ci(k, n)
+        return f"{tex(pct(value))} ({k}/{n})", tex(fmt_ci(lo, hi))
+
+    correct = s["correct"] / s["correct_n"] if s["correct_n"] else None
     rows = [
-        ("Items walked", f"{s['items_walked']} / {s['items_expected']}"),
-        ("Planted faults (detectable)", str(s["planted"])),
-        ("Caught", str(s["caught"])),
-        ("Missed", str(s["missed"])),
-        ("Detection rate", pct(s["detection_rate"])),
-        ("False flags", str(s["false_flags"])),
-        ("Redline precision", pct(s["precision"])),
-        ("Abstention rate", pct(s["abstain_rate"])),
-        ("Known misses (excluded)", str(s["known_miss"])),
+        ("Items walked", f"{s['items_walked']} / {s['items_expected']}", ""),
+        ("Planted faults (detectable)", str(s["planted"]), ""),
+        ("Caught", str(s["caught"]), ""),
+        ("Missed", str(s["missed"]), ""),
+        ("Detection rate",
+         *rate(s["detection_rate"], s["detection_k"], s["detection_n"])),
+        ("False flags", str(s["false_flags"]), ""),
+        ("Redline precision",
+         *rate(s["precision"], s["precision_k"], s["precision_n"])),
+        ("Abstention rate",
+         *rate(s["abstain_rate"], s["abstain_k"], s["abstain_n"])),
+        ("Correct (matched schematic)",
+         *rate(correct, s["correct"], s["correct_n"])),
+        ("Known misses (excluded)", str(s["known_miss"]), ""),
     ]
-    body = " \\\\\n".join(f"{k} & {v}" for k, v in rows)
+    rule = "\\\\"          # the "\\\\" row separator
+    body = (" " + rule + "\n").join(
+        f"{name} & {value} & {interval}" for name, value, interval in rows)
     return (
-        "\\begin{tabular}{lr}\n\\hline\n"
-        f"{body} \\\\\n"
+        "\\begin{tabular}{lrr}\n\\hline\n"
+        f"Metric & Value & 95\\% CI {rule}\n"
+        "\\hline\n"
+        f"{body} {rule}\n"
         "\\hline\n\\end{tabular}"
     )
 

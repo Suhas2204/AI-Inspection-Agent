@@ -11,7 +11,7 @@ these fix the definitions, not the cabinet.
 
 import pytest
 
-from redlining.score import report_text, score
+from redlining.score import latex, report_text, score
 
 
 def attempt(item: str, flagged: bool, band: int = 1, attempt_no: int = 1) -> dict:
@@ -141,3 +141,30 @@ def test_an_empty_denominator_stays_none_and_prints_n_slash_a():
     assert s["detection_rate"] is None
     assert s["detection_n"] == 0
     assert "n/a" in report_text(s)
+
+
+def test_latex_escapes_percent_signs():
+    """An unescaped % starts a LaTeX comment and eats the rest of the row.
+
+    Every percentage this table printed was doing that before the interval
+    column was added, which is how it was found: the new column was the next
+    thing to disappear into the comment.
+    """
+    out = latex(score(run(attempt("-X1", True)), [fault("-X1")]))
+    assert "%" in out, "the table does report percentages"
+    for line in out.splitlines():
+        for pos, char in enumerate(line):
+            if char == "%":
+                assert pos and line[pos - 1] == chr(92), (
+                    f"unescaped % in {line!r}")
+
+
+def test_latex_has_a_column_for_the_interval():
+    """Three columns, and every body row supplies all three cells."""
+    out = latex(score(run(attempt("-X1", True)), [fault("-X1")]))
+    assert "{lrr}" in out
+    body = [line for line in out.splitlines()
+            if "&" in line and "Metric &" not in line]
+    assert body
+    for line in body:
+        assert line.count("&") == 2, line
