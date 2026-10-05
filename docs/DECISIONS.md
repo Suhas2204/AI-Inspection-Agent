@@ -467,3 +467,113 @@ Note:    fixing the LaTeX table to carry the new interval column exposed
          LaTeX comment, so every percentage row had been commenting out
          the rest of itself, trailing row separator included. Any thesis
          table built from --latex before 5 Oct should be regenerated.
+
+## Block 7 — LLM orchestrator — what the model may not know — 5 Oct
+
+Question: a trainee at a cabinet wants to say "where next", "say that
+         again", "skip this one, I can't reach it". That is a dispatch
+         problem and the only thing an LLM is needed for here. Everything
+         else a model could reach for is the risk.
+Decided: src/redlining/orchestrator.py. Text only — no microphone, no
+         weights, no network — and MockLLM is the only implementation, so
+         it runs offline and in the test suite. It is a DRIVER around
+         session.step_item, not a second pipeline: normalising, the
+         Adjudicator and the log are the same calls the keyboard and
+         Streamlit paths make. There is no second adjudicator and no place
+         for one. The only policy the module owns is whether a re-ask is
+         still allowed, and that rule is borrowed from session.run rather
+         than invented.
+Decided: three guarantees, in the order they matter.
+
+         1. It cannot rewrite the reading. submit_reading takes NO
+            arguments: it signals that the trainee has just read the
+            position out, and the orchestrator normalises the utterance it
+            already holds (hear() is the only way words enter the module).
+            A model that sends a text argument anyway has it ignored, and
+            the attempt records that it tried. First because it is worst:
+            a model that could supply the words could turn a misread into
+            a match, and the run would be measuring the model.
+         2. It cannot learn what the schematic expects. Tools return their
+            results unchanged — full verdict, reason, expected — and
+            exactly one function, redact(), stands between those results
+            and the model. Two passes: keys carrying the answer are
+            dropped outright, because a reason like "N: read 0, expected
+            1" cannot be substring-scrubbed without deleting every digit;
+            then every surviving string is scanned word by word against
+            the cabinet's 162 tags, part numbers and rating lines. The
+            second pass is the backstop for a field nobody remembers to
+            add to the first list.
+         3. It cannot decide a verdict. The verdict is step_item's. The
+            orchestrator reads verdict.outcome once, to apply session.run's
+            re-ask rule, and never to form a judgement of its own.
+Found:   audited over a full 70-position walk with CORRECT readings — the
+         case where the read and the answer coincide and a leak is most
+         likely — 141 orchestrator messages and 3424 words scanned against
+         162 secrets, nothing through.
+Decided: the OUTCOME is withheld from the model as well as the answer.
+         "mismatch" names no tag, so the scanning pass would never catch
+         it, and it is withheld anyway: it says the trainee got it wrong,
+         and a model that knows will sooner or later let them know. Re-asks
+         in this study are silent (session.py: "no echo, no hint") because
+         a trainee who learns the last read was wrong reads the next one
+         differently. ask_again is all a dispatcher needs and all it gets.
+Decided: skip takes a POSITION NUMBER, not a tag. Not a style choice: the
+         tag expected at a location is the answer the trainee is being
+         tested on, so a tool signature taking one would hand the model the
+         thing this module exists to withhold. The number is the
+         walking-order index the walker card also prints, and it names a
+         place without saying what is mounted there.
+Decided: a skipped position writes no attempt, so it is simply absent from
+         the log. score.py already reads an absent planted position as
+         "not walked" and scores it neither way, which is exactly what a
+         skip means — no new status, no new column, no change to the
+         scorer.
+Gate:    the trainee's own utterance IS passed to the model verbatim, and
+         this is the one thing the no-disclosure guarantee does not cover.
+         It has to be: a router cannot tell a reading from a request
+         otherwise. When a trainee reads a position correctly their words
+         match what the schematic expects, and that is the INPUT, not a
+         disclosure by this module. The guarantee is about what the
+         orchestrator tells the model, and orchestrator_messages is the
+         list it covers. A test asserts the tag is present in the utterance
+         and absent from every message the orchestrator originates, so the
+         exception is visible rather than discovered later. Closing it
+         entirely would mean the model never seeing the reading, which
+         removes the tool-calling design; that trade has not been made.
+Changed: normalise.CARRIER_PHRASES — "it says", "it reads", "I see",
+         "I read", "the tag is", "that's" — stripped at the FRONT of a
+         transcript only, with every match recorded in
+         Normalised.stripped. Before it, "it says minus 1 F1" normalised
+         to "-ITSAYS1F1" and a good read abstained.
+Gate:    these phrases are NOT measured from the corpus, and they are the
+         only list in normalise.py that is not. Run 20260927-130613 was
+         recorded one reading at a time with nobody to address, so it
+         contains no carrier phrase; LEADING_FILLER's single member "so"
+         was measured, these six were not. They come from the
+         conversational front end, where there is someone to address.
+         Extend them from utterances people actually said. "that is" reads
+         like "that's" and is deliberately absent, so that growing the list
+         stays a decision rather than a drift.
+Gate:    the removal is logged, and that is what makes it legitimate. raw
+         keeps every word the trainee said, value is what was judged, and
+         stripped is the difference. A fixed rule that reports itself can
+         be audited, repeated and argued with. An earlier objection to
+         trimming at all was about a MODEL doing it on judgement, and that
+         objection stands: the model still carries no words. Nothing is
+         stripped from the middle of a reading either — "minus 1 it says
+         F1" still fails, as "minus 12 so f3" always has — and stripping
+         never repairs what follows: "it says minus 9 F 9" reaches the same
+         verdict as "minus 9 F 9", which at position 1 is a flag, because
+         a fault is planted there.
+Gate:    every carrier phrase is more than one token, enforced by a test.
+         That is the invariant making this safe where single words would
+         not be: "i", "s" and "is" each normalise to content on their own,
+         since a single letter is a letter, so they can only ever be
+         removed as part of a phrase.
+Gate:    MockLLM is a stand-in, not an evaluation. It is a fixed phrase
+         mapping, so nothing here says whether a real model would route
+         these utterances correctly, resist asking for the answer, or stay
+         silent about an outcome it was not given. What the tests establish
+         is that it CANNOT get the answer, rewrite a reading or reach a
+         verdict however it behaves — which is the part that should not
+         depend on the model.
