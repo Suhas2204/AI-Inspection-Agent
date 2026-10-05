@@ -115,6 +115,17 @@ class LocalTranscriber:
     def transcribe(self, path: Path) -> tuple[str, float | None]:
         """Transcribe one WAV file (no initial prompt, so misreads stay visible).
 
+        vad_filter=True since 5 Oct 2026. Silero VAD drops the non-speech
+        stretches before decoding, which is what stops the runaway decodes of
+        run 20260927-130613 shorter: measured on that run's own clips by
+        experiments/block05_asr/vad_compare.py, it cut -12F4 attempt 1 from 22
+        tokens to 3 and -7F9 attempt 1 from 112 tokens to 28 -- shorter, but
+        -7F9 is still 28 repetitions of "9" and still not a read. It is not
+        free either: on the same run it turned -X1's "L3" into "N3", trading
+        one misread for another, and it needs onnxruntime present. So the
+        repetition guard in normalise.runaway is not redundant with this;
+        it is what actually catches the loop VAD only shortened.
+
         Args:
             path: Recorded WAV file.
 
@@ -130,6 +141,7 @@ class LocalTranscriber:
             beam_size=5,
             temperature=0.0,
             condition_on_previous_text=False,   # one read must not prime the next
+            vad_filter=True,                    # see VAD note in the docstring
             # NO initial_prompt. Seeding the decoder with part numbers would bias
             # it toward them and hide the misread this whole project measures.
         )

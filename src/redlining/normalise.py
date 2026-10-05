@@ -53,6 +53,7 @@ PHONETIC = {
 # Whisper writes prose. These are filler, not content.
 NOISE_WORDS = {"the", "and", "a", "um", "uh", "er", "please", "okay", "ok"}
 
+
 # 'a' is both an article and the letter A. In part-number mode it is a letter.
 PART_LETTER_HOMOPHONES = {"a": "A", "ay": "A", "eh": "A", "be": "B", "bee": "B",
                           "see": "C", "sea": "C", "cee": "C", "dee": "D",
@@ -66,6 +67,32 @@ PART_LETTER_HOMOPHONES = {"a": "A", "ay": "A", "eh": "A", "be": "B", "bee": "B",
                           "zed": "Z", "zee": "Z"}
 
 PART_RE = re.compile(r"^[A-Z0-9.\-]{4,20}$")
+
+# --------------------------------------------------------------------------
+# Repetition guard
+# --------------------------------------------------------------------------
+# Whisper at temperature=0 can fall into a loop and emit one token until the
+# decode window is full. Two attempts of run 20260927-130613 did: -7F9
+# attempt 1 came back as 112 tokens, 110 of them "9", and -12F4 attempt 1
+# repeated the phrase "F4 minus 12" eight times. Neither is a misheard
+# character -- it is the decoder failing -- and a pipeline that judges them
+# anyway turns a decode failure into a finding about the cabinet.
+#
+# Two tests, because one does not reach both shapes: -12F4 repeated a PHRASE,
+# so no token occurs twice in a row in it and the run test passes it. Only
+# the length test catches that one.
+MAX_TOKEN_RUN = 5           # one token more often than this, back to back
+
+# Token budgets, per read kind. "tag" and "counts" are measured over the 68
+# healthy attempts of run 20260927-130613 (tag mode): the longest device read
+# is 4 tokens, the longest strip read 5, so 12 leaves well over 2x headroom
+# and still sits far below both loops (22 and 112 tokens). No run has used
+# part mode yet, so "part" and "rating" are not measured; they are set from
+# the longest fully spelled-out read in this module's own examples ("acti nine
+# i c sixty n b sixteen amps", 9 tokens) with the same headroom. Narrow them
+# once part mode has a corpus. Do not widen them from imagination -- the
+# whole point is that a healthy read is nowhere near the limit.
+MAX_TOKENS = {"tag": 12, "counts": 12, "part": 24, "rating": 24}
 
 
 @dataclass
@@ -127,6 +154,66 @@ def _expand_repeats(tokens: list[str]) -> list[str]:
     return out
 
 
+def _longest_run(tokens: list[str]) -> tuple[str, int]:
+    """Find the most-repeated token run.
+
+    Args:
+        tokens: Tokens from _pre().
+
+    Returns:
+        (token, length) of the longest back-to-back repeat; ("", 0) if empty.
+    """
+    if not tokens:
+        return "", 0
+    best_token, best, current = tokens[0], 1, 1
+    for previous, token in zip(tokens, tokens[1:]):
+        current = current + 1 if token == previous else 1
+        if current > best:
+            best_token, best = token, current
+    return best_token, best
+
+
+def runaway(raw: str, kind: str) -> str:
+    """Name the decoder failure in a transcript, if there is one.
+
+    This is a guard, not a repair: a transcript it names is abstained on, so
+    the runner re-asks. Nothing is corrected and nothing is dropped -- the raw
+    text is still logged, as everywhere else (CONTEXT §7).
+
+    An empty transcript is NOT a runaway. "Nothing was read" is a different
+    failure with its own abstain, and naming it twice would hide it here.
+
+    Args:
+        raw: Raw transcript, before normalising.
+        kind: Which budget applies -- "tag", "part", "rating" or "counts".
+
+    Returns:
+        A reason to abstain, or "" if the transcript looks like one read.
+
+    Raises:
+        KeyError: If kind is not a known read kind.
+    """
+    budget = MAX_TOKENS[kind]            # before any work: an unknown kind is a bug
+    # Punctuation is stripped as normalise_tag strips it, so that a loop
+    # Whisper punctuates unevenly -- "9, 9. 9," -- is still one run and not
+    # three. Without this, VAD-on's "9. 9. 9." reads as the token "9.".
+    tokens = [t.strip(".,;:!?") for t in _pre(raw)]
+    tokens = [t for t in tokens if t]
+    if not tokens:
+        return ""
+
+    token, run = _longest_run(tokens)
+    if run > MAX_TOKEN_RUN:
+        return (f"the decoder repeated {token!r} {run} times in a row "
+                f"(limit {MAX_TOKEN_RUN}): a runaway decode, not a read. "
+                f"Ask again")
+    if len(tokens) > budget:
+        return (f"the transcript is {len(tokens)} tokens where a spoken "
+                f"{kind} needs at most {budget}: a runaway decode, not a "
+                f"read. Ask again")
+    return ""
+
+
 def normalise_part(raw: str) -> Normalised:
     """Turn a spoken part number into a canonical string. Never corrected to a legal value.
 
@@ -166,6 +253,10 @@ def normalise_part(raw: str) -> Normalised:
             unknown.append(tok)
 
     value = "".join(out)
+
+    stuck = runaway(raw, "part")
+    if stuck:
+        return Normalised(raw, value, "part", False, stuck, out)
 
     if unknown:
         return Normalised(raw, value, "part", False,
@@ -218,6 +309,10 @@ def normalise_rating(raw: str) -> Normalised:
 
     value = "".join(out)
 
+    stuck = runaway(raw, "rating")
+    if stuck:
+        return Normalised(raw, value, "rating", False, stuck, out)
+
     if unknown:
         return Normalised(raw, value, "rating", False,
                           f"unrecognised token(s): {', '.join(unknown)}", out)
@@ -268,6 +363,10 @@ def normalise_tag(raw: str) -> Normalised:
 
     body = "".join(out)
     value = f"-{body}" if body else ""
+
+    stuck = runaway(raw, "tag")
+    if stuck:
+        return Normalised(raw, value, "tag", False, stuck, out)
 
     if unknown:
         return Normalised(raw, value, "tag", False,

@@ -2,7 +2,15 @@
 
 import pytest
 
-from redlining.normalise import compact, normalise_part, normalise_rating, normalise_tag
+from redlining.normalise import (
+    MAX_TOKEN_RUN,
+    MAX_TOKENS,
+    compact,
+    normalise_part,
+    normalise_rating,
+    normalise_tag,
+    runaway,
+)
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -73,3 +81,109 @@ def test_deterministic():
 def test_compact(text, expected):
     """compact() keeps only uppercase letters and digits, folding accents."""
     assert compact(text) == expected
+
+
+# ------------------------------------------------- the repetition guard
+
+# Verbatim from run 20260927-130613, which is why these are reconstructions
+# rather than invented strings: -7F9 attempt 1 is "9, 7, " followed by "9"
+# 110 more times, 334 characters in all, and -12F4 attempt 1 repeats the
+# phrase "F4 minus 12" eight times. LOOP_7F9_VAD is the SAME clip decoded
+# with vad_filter=True, which is the setting LocalTranscriber now uses.
+LOOP_7F9 = "9, 7, " + ", ".join(["9"] * 110)
+LOOP_7F9_VAD = " ".join(["9."] * 28)
+LOOP_12F4 = "F4 minus 12 " * 7 + "F4"
+
+
+def test_runaway_names_the_repeated_token():
+    """The -7F9 loop is reported as a repeat, with the token and the count."""
+    reason = runaway(LOOP_7F9, "tag")
+    assert reason
+    assert "repeated '9' 110 times" in reason
+
+
+def test_vad_does_not_make_the_guard_redundant():
+    """The same clip with vad_filter=True is shorter and still a runaway.
+
+    This is the empirical reason the guard exists alongside VAD: Silero cut
+    -7F9 from 112 tokens to 28, and 28 repetitions of "9" is still not a read.
+    """
+    assert runaway(LOOP_7F9_VAD, "tag")
+
+
+def test_a_repeated_phrase_is_caught_by_length_not_by_the_run_test():
+    """-12F4 repeats a phrase, so only the length half of the guard reaches it."""
+    tokens = LOOP_12F4.lower().split()
+    assert all(a != b for a, b in zip(tokens, tokens[1:])),         "no token repeats back to back, so the run test cannot catch this one"
+    reason = runaway(LOOP_12F4, "tag")
+    assert reason
+    assert "tokens where a spoken tag needs at most" in reason
+
+
+@pytest.mark.parametrize("run_length, flagged", [
+    (MAX_TOKEN_RUN, False),             # 5 in a row is allowed
+    (MAX_TOKEN_RUN + 1, True),          # "more than 5" is not
+])
+def test_the_run_limit_is_more_than_not_at_least(run_length, flagged):
+    """The boundary is exactly MAX_TOKEN_RUN repeats allowed, one more flagged."""
+    assert bool(runaway(" ".join(["9"] * run_length), "tag")) is flagged
+
+
+@pytest.mark.parametrize("kind", sorted(MAX_TOKENS))
+def test_the_budget_boundary_holds_for_every_kind(kind):
+    """Each kind allows its budget in distinct tokens and flags one more."""
+    words = ["one", "two", "three", "four", "five", "six", "seven", "eight",
+             "nine", "ten", "eleven", "twelve", "alpha", "bravo", "charlie",
+             "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+             "kilo", "lima", "mike"]
+    budget = MAX_TOKENS[kind]
+    assert not runaway(" ".join(words[:budget]), kind)
+    assert runaway(" ".join(words[:budget + 1]), kind)
+
+
+@pytest.mark.parametrize("raw, kind", [
+    ("Minus 7F9", "tag"),               # the -7F9 re-read that was heard right
+    ("minus 12 f4", "tag"),             # the -12F4 re-read
+    ("minus 13 k2", "tag"),
+    ("L3, N1, PE1, Bracket 1.", "counts"),
+    ("a nine f zero three one one six", "part"),
+    ("acti nine i c sixty n b sixteen amps", "rating"),
+])
+def test_one_read_transcripts_pass_the_guard(raw, kind):
+    """A healthy transcript is never called a runaway, in any read kind."""
+    assert runaway(raw, kind) == ""
+
+
+@pytest.mark.parametrize("raw", ["", "   ", ".,;"])
+def test_empty_is_not_a_runaway(raw):
+    """Nothing read is a different failure with its own abstain, not this one."""
+    assert runaway(raw, "tag") == ""
+
+
+@pytest.mark.parametrize("normalise, kind", [
+    (normalise_tag, "tag"),
+    (normalise_part, "part"),
+    (normalise_rating, "rating"),
+])
+def test_a_runaway_is_malformed_in_every_normaliser(normalise, kind):
+    """The guard reaches all three normalisers, so no caller has to ask twice."""
+    result = normalise(LOOP_7F9)
+    assert not result.well_formed
+    assert "runaway decode" in result.reason
+
+
+def test_a_runaway_still_carries_its_value_and_its_raw_text():
+    """Flagging a loop must not launder it away: the evidence is kept.
+
+    The CER in experiments/block05_asr/score.py aligns .value, so emptying it
+    here would silently move that metric while claiming only to classify.
+    """
+    result = normalise_tag(LOOP_7F9)
+    assert result.raw == LOOP_7F9
+    assert result.value.startswith("-97999")
+
+
+def test_a_short_repeat_that_whisper_punctuates_unevenly_is_one_run():
+    """Punctuation is stripped, so "9, 9. 9," is one run of three, not three."""
+    reason = runaway("9, 9. 9, 9. 9, 9. 9.", "tag")
+    assert "repeated '9' 7 times" in reason

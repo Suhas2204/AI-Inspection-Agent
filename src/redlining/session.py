@@ -29,7 +29,12 @@ from .adjudicate import (
     Verdict,
 )
 from .checklist import Item, load_checklist
-from .normalise import normalise_part, normalise_rating, normalise_tag
+from .normalise import (
+    normalise_part,
+    normalise_rating,
+    normalise_tag,
+    runaway,
+)
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
 
@@ -128,6 +133,30 @@ WORD_DIGITS = {"ZERO": 0, "ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
 FUNCTIONS = {"N", "L", "PE", "BRACKET"}
 GLUED_RE = re.compile(r"[A-Z]+|\d+")
 
+# Which budget normalise.runaway applies to each raw field of a Read. The
+# strip path is the reason this lives here rather than in the normalisers:
+# counts go through parse_counts, which has no well_formed to carry a reason.
+GUARDED_FIELDS = (("tag_raw", "tag"), ("part_raw", "part"),
+                  ("rating_raw", "rating"), ("counts_raw", "counts"))
+
+
+def runaway_reason(read: Read) -> str:
+    """The first repetition-guard failure among a Read's raw fields, if any.
+
+    Args:
+        read: One spoken attempt, before anything has been judged.
+
+    Returns:
+        A reason to abstain, or "" if every field present looks like one read.
+    """
+    for field_name, kind in GUARDED_FIELDS:
+        raw = getattr(read, field_name)
+        if raw:
+            stuck = runaway(raw, kind)
+            if stuck:
+                return stuck
+    return ""
+
 
 def parse_counts(text: str) -> dict:
     """Turn spoken strip counts into a function -> count dict.
@@ -193,7 +222,25 @@ def step_item(item: Item, adj: Adjudicator, source, log: RunLog,
             else source.device(item.spoken, attempt_no))
 
     # --- commit: normalise before anything is compared.
-    if item.kind == "strip":
+    #
+    # The repetition guard comes first and SHORT-CIRCUITS the adjudicator. A
+    # looped decode is not a read of this position, so there is nothing here
+    # to judge against the schematic; judging it anyway is how a recogniser
+    # failure is published as a finding about the cabinet. -X1 of run
+    # 20260927-130613 is what that costs: "N" heard as "M" was reported as
+    # "N: read 0, expected 1" against an unfaulted strip the walker had in
+    # fact counted correctly. A loop is the same error with a louder tell,
+    # and this is the tell. The attempt is still logged in full, and the
+    # abstain spends a re-ask exactly as any other abstain does.
+    stuck = runaway_reason(read)
+    if stuck:
+        # expected carries the tag, as every other abstain does. An empty
+        # expected means "no such item in the schematic" (see Verdict), and
+        # this position is in it -- it was simply never read.
+        verdict = Verdict(ABSTAIN, stuck, item.tag,
+                          {"raw": read.raw}, {"tag": item.tag})
+        normalised, well_formed = "", False
+    elif item.kind == "strip":
         verdict = adj.judge_strip(item.tag, parse_counts(read.counts_raw))
         normalised = str(parse_counts(read.counts_raw))
         well_formed = bool(parse_counts(read.counts_raw))
