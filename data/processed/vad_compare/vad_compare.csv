@@ -1,0 +1,73 @@
+item,kind,attempt_no,wav,text_off,text_on,changed,stored,conf_off,conf_on,secs_off,secs_on
+-1Q1,device,1,1Q1_tag_a1.wav,Minus 1 F1,minus one F1.,True,Minus 1 F1,0.416,0.436,3.347,3.078
+-1F1,device,1,1F1_tag_a1.wav,Minus one F one.,Minus one F one.,False,Minus one F one.,0.443,0.488,3.658,4.293
+-5F1,device,1,5F1_tag_a1.wav,Minus 5 F3.,minus 5 F3.,True,Minus 5 F3.,0.434,0.453,3.253,3.385
+-5F2,device,1,5F2_tag_a1.wav,minus 5 f2,minus 5 f2,False,minus 5 f2,0.414,0.457,3.166,3.064
+-5F3,device,1,5F3_tag_a1.wav,Minus 5 F3.,Minus 5 F3.,False,Minus 5 F3.,0.426,0.439,3.13,3.138
+-6F1,device,1,6F1_tag_a1.wav,Minus 6F1,Minus 6F1,False,Minus 6F1,0.426,0.483,3.05,3.153
+-2Q1,device,1,2Q1_tag_a1.wav,Minus 2 Q1,minus 2 q1,True,Minus 2 Q1,0.417,0.447,3.145,3.062
+-1Q2,device,1,1Q2_tag_a1.wav,minus 1 q2.,minus 1 q2,True,minus 1 q2.,0.398,0.451,3.191,3.088
+-1Q3,device,1,1Q3_tag_a1.wav,minus 1q3,minus 1 q3,True,minus 1q3,0.466,0.443,3.069,3.151
+-2Q3,device,1,2Q3_tag_a1.wav,minus 2q2,minus 2q2,False,minus 2q2,0.446,0.504,3.181,3.192
+-2Q2,device,1,2Q2_tag_a1.wav,minus 2 q3,minus 2 q3,False,minus 2 q3,0.476,0.509,3.078,3.092
+-6F4,device,1,6F4_tag_a1.wav,Minus 6F4,Minus 6F4,False,Minus 6F4,0.411,0.485,3.04,3.08
+-14F1,device,1,14F1_tag_a1.wav,minus 14 f1,minus 14 f1,False,minus 14 f1,0.418,0.487,3.563,3.549
+-7F1,device,1,7F1_tag_a1.wav,minus seven F1.,minus 7F1.,True,minus seven F1.,0.461,0.452,3.044,3.064
+-7F2,device,1,7F2_tag_a1.wav,minus 7 f2,minus seven F2,True,minus 7 f2,0.411,0.511,3.113,3.035
+-7F3,device,1,7F3_tag_a1.wav,Minus 7 F3.,minus seven F3,True,Minus 7 F3.,0.422,0.506,3.071,3.113
+-7F4,device,1,7F4_tag_a1.wav,Minus 7F4,minus seven F4,True,Minus 7F4,0.413,0.493,3.15,3.073
+-7F5,device,1,7F5_tag_a1.wav,Minus 7 f5,minus 7 f5,True,Minus 7 f5,0.452,0.481,3.046,3.083
+-7F6,device,1,7F6_tag_a1.wav,Minus 7F6.,minus 7F6.,True,Minus 7F6.,0.408,0.45,3.189,3.507
+-7F7,device,1,7F7_tag_a1.wav,minus seven F7.,minus 7F7.,True,minus seven F7.,0.392,0.432,3.334,3.119
+-7F8,device,1,7F8_tag_a1.wav,minus seven F eight.,minus 7F8.,True,minus seven F eight.,0.374,0.447,3.135,3.04
+-7F9,device,1,7F9_tag_a1.wav,"9, 7, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9",9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9. 9.,True,"9, 7, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9",0.903,0.859,14.425,6.619
+-7F9,device,2,7F9_tag_a2.wav,Minus 7F9,Minus 7F9,False,Minus 7F9,0.419,0.449,3.171,3.091
+-8F1,device,1,8F1_tag_a1.wav,Minus 8F1.,minus 8f1,True,Minus 8F1.,0.424,0.531,3.093,3.112
+-8F2,device,1,8F2_tag_a1.wav,minus 8 f2,minus 8 f2,False,minus 8 f2,0.43,0.536,3.079,3.048
+-8F3,device,1,8F3_tag_a1.wav,Minus 8 f3,minus 8 f3,True,Minus 8 f3,0.49,0.492,3.072,3.079
+-8F4,device,1,8F4_tag_a1.wav,Minus 8 f4,minus 8 f4,True,Minus 8 f4,0.428,0.484,3.083,3.581
+-8F5,device,1,8F5_tag_a1.wav,minus 8 f 5,minus 8 f 5,False,minus 8 f 5,0.457,0.513,3.409,3.077
+-8F6,device,1,8F6_tag_a1.wav,minus 8 f6,minus 8 f6,False,minus 8 f6,0.431,0.509,3.13,3.089
+-8F7,device,1,8F7_tag_a1.wav,Minus 8 f8,Minus 8 f 8,True,Minus 8 f8,0.39,0.608,3.075,3.053
+-8F8,device,1,8F8_tag_a1.wav,minus 8 f 7,Minus 8 f 7,True,minus 8 f 7,0.449,0.421,3.192,3.096
+-13K1,device,1,13K1_tag_a1.wav,Minus 13k2.,minus 13k2,True,Minus 13k2.,0.462,0.552,3.622,3.619
+-3F1,device,1,3F1_tag_a1.wav,minus 3F1.,minus 3F1,True,minus 3F1.,0.422,0.497,3.356,3.062
+-3F2,device,1,3F2_tag_a1.wav,minus 3 f2,minus 3 f2,False,minus 3 f2,0.473,0.505,3.101,3.436
+-3F3,device,1,3F3_tag_a1.wav,Minus 3 F3,minus 3 F3,True,Minus 3 F3,0.513,0.496,3.134,3.037
+-3F4,device,1,3F4_tag_a1.wav,minus 3F4.,minus 3F4,True,minus 3F4.,0.428,0.496,3.131,3.045
+-13K2,device,1,13K2_tag_a1.wav,Minus 13k2,Minus 13k2,False,Minus 13k2,0.427,0.565,4.448,4.188
+-4F1,device,1,4F1_tag_a1.wav,Minus 4 F1,minus 4F1,True,Minus 4 F1,0.45,0.52,3.063,3.13
+-4F2,device,1,4F2_tag_a1.wav,Minus 4 F2.,minus 4F2.,True,Minus 4 F2.,0.394,0.484,3.041,3.073
+-4F3,device,1,4F3_tag_a1.wav,minus 4f3,minus 4F3,True,minus 4f3,0.453,0.497,3.062,3.099
+-4F5,device,1,4F5_tag_a1.wav,minus 4F5,minus 4 F5,True,minus 4F5,0.476,0.499,3.089,3.088
+-4F6,device,1,4F6_tag_a1.wav,minus 9F9.,minus 9 f 9,True,minus 9F9.,0.463,0.49,3.144,3.081
+-4F7,device,1,4F7_tag_a1.wav,minus 4F7.,minus 4F7,True,minus 4F7.,0.439,0.484,3.073,3.036
+-11F1,device,1,11F1_tag_a1.wav,minus 11 f1.,Minus 11 f1,True,minus 11 f1.,0.423,0.468,4.325,4.136
+-11F2,device,1,11F2_tag_a1.wav,Minus 11 F2,minus 11 f2,True,Minus 11 F2,0.453,0.498,3.699,3.525
+-12F1,device,1,12F1_tag_a1.wav,Minus 12 F1.,Minus 12 F1,True,Minus 12 F1.,0.459,0.467,3.478,3.386
+-12F2,device,1,12F2_tag_a1.wav,minus 12 f2,minus 12 f2,False,minus 12 f2,0.533,0.469,3.596,4.058
+-12F3,device,1,12F3_tag_a1.wav,minus 12 F3.,"So, minus 12 F3.",True,minus 12 F3.,0.434,0.512,3.581,3.729
+-12F4,device,1,12F4_tag_a1.wav,F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4,minus 12 f4.,True,F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4 minus 12 F4,0.574,0.451,4.505,3.612
+-12F4,device,2,12F4_tag_a2.wav,minus 12 f4,Minus 12 f4,True,minus 12 f4,0.395,0.414,3.451,3.493
+-12F5,device,1,12F5_tag_a1.wav,Minus 12 f6.,minus 12 F6.,True,Minus 12 f6.,0.347,0.471,3.648,4.203
+-12F6,device,1,12F6_tag_a1.wav,minus 12 F5,minus 12 F5,False,minus 12 F5,0.447,0.496,4.362,4.092
+-13K3,device,1,13K3_tag_a1.wav,minus 13k3,Minus 13k3,True,minus 13k3,0.465,0.528,4.298,3.841
+-10F1,device,1,10F1_tag_a1.wav,Minus 10 F1.,minus 10 F1.,True,Minus 10 F1.,0.423,0.481,3.861,3.684
+-10F3,device,1,10F3_tag_a1.wav,minus 10 f4,minus 10 f4,False,minus 10 f4,0.528,0.508,3.5,3.377
+-10F4,device,1,10F4_tag_a1.wav,Minus 10 F3,minus 10 F3.,True,Minus 10 F3,0.478,0.467,3.555,4.488
+-X1,strip,1,X1_counts_a1.wav,"L3, M1, PE1, Bracket 1.","N3, N1, PE1, Bracket 1.",True,"L3, M1, PE1, Bracket 1.",0.597,0.609,3.268,3.267
+-X4,strip,1,X4_counts_a1.wav,"L8, N8, PE8, Bracket 1","L8, N8, PE8, Bracket 1.",True,"L8, N8, PE8, Bracket 1",0.583,0.602,3.308,3.385
+-X5,strip,1,X5_counts_a1.wav,"L17, N18, PE17, Bracket 2.","L17, N18, PE17, Bracket 2.",False,"L17, N18, PE17, Bracket 2.",0.558,0.633,3.433,3.35
+-14K2,device,1,14K2_tag_a1.wav,minus 14k2,minus 14k2,False,minus 14k2,0.489,0.546,3.422,3.451
+-14K1,device,1,14K1_tag_a1.wav,minus 14k1.,minus 14k1,True,minus 14k1.,0.434,0.575,3.574,3.453
+-1F2,device,1,1F2_tag_a1.wav,minus 1 f2,minus one F2,True,minus 1 f2,0.414,0.483,3.663,3.146
+-1F3,device,1,1F3_tag_a1.wav,Minus one F3,minus 1 f3,True,Minus one F3,0.451,0.498,3.244,3.134
+-2F1,device,1,2F1_tag_a1.wav,Minus 2 F1,minus 2F1,True,Minus 2 F1,0.446,0.481,3.068,3.041
+-2F2,device,1,2F2_tag_a1.wav,Minus 2 F2,minus 2 f2,True,Minus 2 F2,0.432,0.477,3.055,3.038
+-2F3,device,1,2F3_tag_a1.wav,minus 2 f3,minus 2 f3,False,minus 2 f3,0.561,0.516,3.149,3.075
+-X2,strip,1,X2_counts_a1.wav,"L12, N5, PE5, bracket 1","L12, N5, PE5, bracket 1.",True,"L12, N5, PE5, bracket 1",0.558,0.632,3.307,3.346
+-X3,strip,1,X3_counts_a1.wav,"L12, N7, PE6, bracket 1.","L12, N7, PE6, bracket 1.",False,"L12, N7, PE6, bracket 1.",0.511,0.608,3.257,3.355
+-X6,strip,1,X6_counts_a1.wav,L6N5PE4 R1,L6N5PE4 bracket 1,True,L6N5PE4 R1,0.498,0.55,3.174,3.162
+-X7,strip,1,X7_counts_a1.wav,"L12, N9, PE8, bracket 1.","L12, N9, PE8, bracket 1.",False,"L12, N9, PE8, bracket 1.",0.538,0.6,3.579,3.37
+-X8,strip,1,X8_counts_a1.wav,L6PE3 Bracket 2,L6PE3 Bracket 2,False,L6PE3 Bracket 2,0.486,0.548,3.233,3.169
+-13K4,device,1,13K4_tag_a1.wav,Minus 13k4.,minus 13k4,True,Minus 13k4.,0.417,0.468,3.775,3.506

@@ -42,6 +42,7 @@ from redlining.walker_card import VERSIONS, card, load_overrides
 FAULTS = DECISIONS / "faults.csv"
 CARD = ROOT / "walker_card.txt"
 
+LABEL_W = 26                   # width of the set-label column
 HIT, SUB, DEL, INS = "hit", "sub", "del", "ins"
 GAP = "∅"                      # the empty side of an insert or a delete
 
@@ -251,12 +252,14 @@ def overall_table(sets: list[tuple[str, dict]]) -> str:
         sets: (label, score_attempts result) pairs.
 
     Returns:
-        The table.
+        The table. The header is built from the same widths as the rows, so a
+        label too long for its column cannot silently misalign one.
     """
-    head = "  set                        atts  ref ch   sub  del  ins     CER"
+    head = (f"  {'set':<{LABEL_W}}{'atts':>6}{'ref ch':>8}{'sub':>6}"
+            f"{'del':>5}{'ins':>5}{'CER':>8}")
     L = [head, "  " + "-" * (len(head) - 2)]
     for label, s in sets:
-        L.append(f"  {label:<24}{s['attempts']:>6}{s['ref_chars']:>8}"
+        L.append(f"  {label:<{LABEL_W}}{s['attempts']:>6}{s['ref_chars']:>8}"
                  f"{s['sub']:>6}{s['del']:>5}{s['ins']:>5}"
                  f"{pct(s['cer']):>8}")
     return "\n".join(L)

@@ -51,3 +51,13 @@ runs/20260927-130613/*
 !runs/20260927-130613/attempts.jsonl
 !runs/20260927-130613/report.json
 !runs/20260927-130613/report.md
+
+# The VAD side experiment's outputs, including its two probe clips. The
+# *.wav rule above is there because a recording is someone's voice; these
+# two are not. They are digital silence and seeded gaussian noise that
+# vad_compare.py generates itself (write_probes, seed 20260927), and what
+# each side transcribes from them -- "You" without VAD, nothing with it --
+# is one of the results. Keeping the exact inputs means that result can be
+# checked without regenerating them.
+!data/processed/vad_compare/
+!data/processed/vad_compare/*.wav
