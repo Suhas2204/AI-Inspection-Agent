@@ -28,6 +28,7 @@ One request per utterance and no retries, because the server is shared.
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -35,6 +36,8 @@ import statistics
 import urllib.error
 import urllib.request
 from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -57,7 +60,7 @@ from redlining.orchestrator import (
     _wire_tools,
     secrets_of,
 )
-from redlining.paths import SCHEMATIC
+from redlining.paths import PROCESSED, SCHEMATIC
 from redlining.report import RunLog
 
 WORDS = re.compile(r"[A-Za-z0-9]+")
@@ -330,6 +333,99 @@ def test_the_models_own_words_are_passed_to_the_trainee():
     assert not llm.failures
 
 
+# ----------------------------------------------- the rows reach disk at all
+
+def _fake_rows(n: int) -> list[dict]:
+    """n rows shaped as the measurement writes them.
+
+    Args:
+        n: How many.
+
+    Returns:
+        Rows keyed as FIELDS.
+    """
+    return [{"model": "m", "request_no": i, "utterance": f"said {i}",
+             "expected_intent": "skip", "chosen_tool": "skip",
+             "correct": True, "latency_s": 0.5 + i, "state": "open",
+             "reply_text": ""} for i in range(1, n + 1)]
+
+
+def test_the_rows_are_written_as_csv_and_json(tmp_path):
+    """Both files carry every row, and the CSV header is FIELDS in order."""
+    llm = LlamaCppLLM(url=DEAD_URL)
+    rows = _fake_rows(3)
+
+    csv_path, json_path = _persist("m", rows, llm, out_dir=tmp_path)
+
+    with csv_path.open(encoding="utf-8", newline="") as fh:
+        read = list(csv.DictReader(fh))
+    assert tuple(read[0]) == FIELDS
+    assert [r["utterance"] for r in read] == ["said 1", "said 2", "said 3"]
+    assert [r["latency_s"] for r in read] == ["1.5", "2.5", "3.5"]
+
+    blob = json.loads(json_path.read_text(encoding="utf-8"))
+    assert blob["rows"] == rows
+    assert blob["measured"] == 3 and blob["utterances"] == len(UTTERANCES)
+
+
+def test_the_settings_are_written_beside_the_rows(tmp_path):
+    """A latency means nothing without the model, endpoint and temperature."""
+    llm = LlamaCppLLM(url=DEAD_URL, model="m", timeout_s=60.0)
+
+    _, json_path = _persist("m", _fake_rows(1), llm, out_dir=tmp_path)
+
+    blob = json.loads(json_path.read_text(encoding="utf-8"))
+    assert blob["model"] == "m" and blob["url"] == DEAD_URL
+    assert blob["temperature"] == 0.0 and blob["timeout_s"] == 60.0
+    assert blob["measured_at"].startswith(str(datetime.now().year))
+
+
+def test_a_run_that_dies_halfway_keeps_what_it_measured(tmp_path):
+    """Written after every request, so both files are always complete.
+
+    The scar this is here for: the first sweep printed a summary and
+    discarded the rows, and the per-utterance latencies could not be got
+    back from the printed aggregates without spending the shared server's
+    time again.
+    """
+    llm = LlamaCppLLM(url=DEAD_URL)
+
+    for n in (1, 2, 3):
+        csv_path, json_path = _persist("m", _fake_rows(n), llm,
+                                       out_dir=tmp_path)
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            assert len(list(csv.DictReader(fh))) == n
+        assert len(json.loads(json_path.read_text("utf-8"))["rows"]) == n
+
+
+def test_the_failures_are_written_too(tmp_path):
+    """A row that clarified because the server broke must say so in the file."""
+    llm = LlamaCppLLM(url=DEAD_URL, timeout_s=2.0)
+    llm.decide([{"role": "user", "content": "where next"}], TOOLS)
+
+    _, json_path = _persist("m", _fake_rows(1), llm, out_dir=tmp_path)
+
+    blob = json.loads(json_path.read_text(encoding="utf-8"))
+    assert len(blob["failures"]) == 1
+    assert blob["failures"][0]["kind"] and blob["failures"][0]["detail"]
+
+
+@pytest.mark.parametrize("model, stem", [
+    ("Qwen3.8-27B-UD-Q8_K_XL", "Qwen3.8-27B-UD-Q8_K_XL"),
+    ("Gemma-4-26B-A4B-it-UD-Q4_K_XL", "Gemma-4-26B-A4B-it-UD-Q4_K_XL"),
+    ("vendor/model:v1", "vendor_model_v1"),
+    ("../../escape", ".._.._escape"),
+])
+def test_a_model_name_cannot_climb_out_of_the_output_directory(model, stem):
+    """Dots and hyphens are kept; a separator is not."""
+    assert _file_stem(model) == stem
+
+
+def test_the_output_directory_is_under_data_processed():
+    """Written where the other generated files live, not next to the tests."""
+    assert OUT == PROCESSED / "llm_intent"
+
+
 def test_the_defaults_are_the_ones_the_study_ran():
     """Pinned because the numbers in the write-up were measured with them."""
     llm = LlamaCppLLM()
@@ -477,23 +573,98 @@ def _chosen(decision) -> str:
     return decision.name if isinstance(decision, ToolCall) else "clarify"
 
 
+OUT = PROCESSED / "llm_intent"
+
+# Columns, in the order they are written. The first six are the measurement
+# itself; state and reply_text are what make a wrong row diagnosable months
+# later, when the only thing left is the file.
+FIELDS = ("model", "request_no", "utterance", "expected_intent",
+          "chosen_tool", "correct", "latency_s", "state", "reply_text")
+
+
+def _file_stem(model: str) -> str:
+    """A filename for a model name.
+
+    Model names carry dots and hyphens, which are fine in a filename; this
+    exists for anything that is not, so a name can never climb out of the
+    output directory.
+
+    Args:
+        model: Model name as the endpoint knows it.
+
+    Returns:
+        The name with every other character replaced by an underscore.
+    """
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", model)
+
+
+def _persist(model: str, rows: list[dict], llm: LlamaCppLLM,
+             out_dir: Path = OUT) -> tuple[Path, Path]:
+    """Write every row measured so far, as CSV and as JSON.
+
+    Called after each request rather than once at the end, and both files
+    are rewritten whole so neither is ever half-written. The reason is a
+    scar: the first sweep of this test printed a summary and discarded the
+    rows, and the per-utterance latencies could not be reconstructed from
+    the printed aggregates without spending the shared server's time again.
+    Rows reach disk before the next request is made, so a run that dies
+    halfway still leaves everything it measured.
+
+    The JSON carries the settings as well as the rows. A latency is only
+    meaningful next to the model, the endpoint and the temperature it was
+    measured at, and a file that will be cited in a write-up should not
+    depend on someone remembering them.
+
+    Args:
+        model: Model name, which names the files.
+        rows: Rows so far, newest last.
+        llm: The client, for the settings and the recorded failures.
+        out_dir: Where to write. Defaults to data/processed/llm_intent.
+
+    Returns:
+        (csv_path, json_path).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"{_file_stem(model)}.csv"
+    json_path = out_dir / f"{_file_stem(model)}.json"
+
+    with csv_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    json_path.write_text(json.dumps(
+        {"model": model,
+         "url": llm.url,
+         "temperature": llm.temperature,
+         "timeout_s": llm.timeout_s,
+         "measured_at": datetime.now(timezone.utc).isoformat(
+             timespec="seconds"),
+         "utterances": len(UTTERANCES),
+         "measured": len(rows),
+         "failures": llm.failures,
+         "rows": rows}, indent=2) + "\n", encoding="utf-8")
+    return csv_path, json_path
+
+
 def _report(model: str, rows: list[dict], llm: LlamaCppLLM) -> float:
     """Print the measurement and return the accuracy.
 
     Args:
         model: Model name, for the heading.
-        rows: One dict per utterance: said, want, got, seconds.
+        rows: One dict per utterance, keyed as FIELDS.
         llm: The client, for its recorded failures.
 
     Returns:
         Intent accuracy over all rows.
     """
-    right = [r for r in rows if r["got"] == r["want"]]
+    right = [r for r in rows if r["correct"]]
     accuracy = len(right) / len(rows)
     # The first request is reported apart: on this server an unloaded model is
     # swapped in on demand, so request one can carry a model load that the
     # other twenty-one do not.
-    first, rest = rows[0]["seconds"], [r["seconds"] for r in rows[1:]]
+    first = rows[0]["latency_s"]
+    rest = [r["latency_s"] for r in rows[1:]]
 
     print(f"\n=== {model} ===")
     print(f"intent accuracy  {len(right)}/{len(rows)} = {accuracy:.0%}")
@@ -504,20 +675,21 @@ def _report(model: str, rows: list[dict], llm: LlamaCppLLM) -> float:
 
     by_intent: dict[str, list[dict]] = {}
     for row in rows:
-        by_intent.setdefault(row["want"], []).append(row)
+        by_intent.setdefault(row["expected_intent"], []).append(row)
     print("per intent:")
     for intent, group in by_intent.items():
-        hits = sum(1 for r in group if r["got"] == r["want"])
+        hits = sum(1 for r in group if r["correct"])
         print(f"  {intent:<18} {hits}/{len(group)}")
 
-    wrong = [r for r in rows if r["got"] != r["want"]]
+    wrong = [r for r in rows if not r["correct"]]
     if wrong:
         print("wrong:")
         for row in wrong:
-            print(f"  {row['said']!r:<42} want {row['want']:<17}"
-                  f" got {row['got']}")
-            if row["detail"]:
-                print(f"      said instead: {row['detail'][:110]!r}")
+            print(f"  {row['utterance']!r:<42} "
+                  f"want {row['expected_intent']:<17}"
+                  f" got {row['chosen_tool']}")
+            if row["reply_text"]:
+                print(f"      said instead: {row['reply_text'][:110]!r}")
     if llm.failures:
         print("failures:")
         for failure in llm.failures:
@@ -537,17 +709,27 @@ def test_integration_intent_accuracy_and_latency(adj, checklist, tmp_path):
     llm = orc.llm
 
     rows = []
-    for said, want, state in UTTERANCES:
+    for number, (said, want, state) in enumerate(UTTERANCES, start=1):
         before = len(llm.latencies_s)
         decision = llm.decide(
             contexts[state] + [{"role": "user", "content": said}], TOOLS)
-        rows.append({"said": said, "want": want, "state": state,
-                     "got": _chosen(decision),
-                     "detail": ("" if isinstance(decision, ToolCall)
-                                else decision.text),
-                     "seconds": llm.latencies_s[before]})
+        chosen = _chosen(decision)
+        rows.append({"model": llm.model,
+                     "request_no": number,
+                     "utterance": said,
+                     "expected_intent": want,
+                     "chosen_tool": chosen,
+                     "correct": chosen == want,
+                     "latency_s": round(llm.latencies_s[before], 3),
+                     "state": state,
+                     "reply_text": ("" if isinstance(decision, ToolCall)
+                                    else decision.text)})
+        # After every request, not at the end. See _persist.
+        csv_path, json_path = _persist(llm.model, rows, llm)
 
     accuracy = _report(llm.model, rows, llm)
+    print(f"rows written     {csv_path}")
+    print(f"                 {json_path}")
 
     for decision in llm.calls:
         assert isinstance(decision, Reply) or decision.name in TOOL_NAMES, \
