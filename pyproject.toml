@@ -15,6 +15,7 @@ dependencies = [
     "pyttsx3>=2.99",
     "streamlit>=1.64.0",
     "plotly>=7.1.0",
+    "onnxruntime<1.20",
 ]
 
 [build-system]
