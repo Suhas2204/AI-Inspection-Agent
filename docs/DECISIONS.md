@@ -384,3 +384,86 @@ Gate:    v2 removes only the GLANCEABLE tell. A faulted strip's clause still
          indistinguishable in form from a correct one. Nothing already
          measured moves — v1 and v2 differ only at the strip lines and the
          header, and strips carry no character reference anyway.
+
+## Block 9 — interval estimates and the paired VAD test — 5 Oct
+
+Question: every metric in this study is a proportion over a small
+         denominator — 70 positions, 10 planted fault rows, 64 scorable
+         attempts. A bare percentage hides that, and invites comparisons
+         the run cannot support.
+Decided: every reported rate (correct, abstention, fault detection, false
+         flag/precision, coverage, risk, per band, per character) now
+         prints its k/n and a 95% Wilson score interval beside the
+         percentage. The percentages are unchanged; nothing was restated.
+Rejected: the normal-approximation (Wald) interval,
+         p ± z·sqrt(p(1−p)/n). It has zero width at k = 0 and k = n, and
+         this run reports 0/70 abstains and 70/70 coverage — Wald would
+         print "0.0% to 0.0%" for both and claim a certainty nobody
+         measured. Wilson gives 0/70 = [0.0, 5.2]. Recommended for small n
+         by Brown, Cai & DasGupta (2001).
+Rejected: an interval on the character error rate, anywhere. A CER is
+         errors per reference character, not a binomial proportion: the
+         characters inside one attempt are not independent trials, and
+         insertions let the numerator exceed the denominator — one runaway
+         decode in this corpus scores 2750%. CER is reported as itself,
+         with the per-clip table beside it.
+Found:   what the intervals say that the percentages did not —
+
+           detection rate   8/10    80.0%  [49.0, 94.3]
+           precision        8/10    80.0%  [49.0, 94.3]
+           abstention       0/70     0.0%  [ 0.0,  5.2]
+           correct          56/70   80.0%  [69.2, 87.7]
+           band 3           0/2      0.0%  [ 0.0, 65.8]
+
+         Band 3 is the clearest case. "0%" reads as a finding; "0/2,
+         [0.0, 65.8]" reads as two observations. The same in the
+         per-character table, where 100.0% on three characters is
+         [44, 100]: score.py already warned about thin evidence, and the
+         interval now quantifies it rather than naming it.
+Decided: the VAD on/off comparison is scored as a PAIRED test, not two
+         independent rates. Both sides decoded the same 64 clips, so
+         comparing the marginals as if they were two samples would
+         overstate what the run can tell us. Per-attempt correct is exact
+         match against the card — the same test the correct column uses,
+         called one attempt at a time, so the two cannot drift.
+Found:   vad_filter=False 62/64 = 96.9% [89.3, 99.1]
+         vad_filter=True  63/64 = 98.4% [91.7, 99.7]
+         both right 62, both wrong 1, b (only OFF right) 0, c (only ON
+         right) 1. Exact McNemar: p = 1.0000. The single discordant
+         attempt is -12F4 attempt 1, which only the VAD side got right;
+         the one both got wrong is -7F9 attempt 1, the loop VAD shortened
+         but did not fix.
+Rejected: the chi-square form of McNemar, (b−c)²/(b+c). It is an
+         approximation that should not be trusted much below b + c = 25,
+         and here b + c = 1. The p-value is the exact binomial test it
+         approximates: under the null b ~ Binomial(b+c, ½), computed in
+         exact integer arithmetic.
+Gate:    p = 1.0 is NOT a finding of equivalence, and must not be written
+         up as one. With b + c = 1 the test has essentially no power: it
+         could not have detected a difference of any size, so a large
+         p-value here is a statement about the run and not about VAD. The
+         63 attempts the two sides agreed on carry no information about
+         which is better; only the discordant ones do, and there is one.
+         The same caution applies to every interval above — intervals that
+         overlap across the 12 swept settings in risk_coverage are not
+         evidence that the settings differ, and most of them overlap.
+Gate:    the decision to enable VAD does NOT rest on this test, and never
+         did. It rests on the probes: without VAD the model invents "You"
+         from digital silence, which is what cost -X3, -X6 and -X7 every
+         attempt they had. On per-attempt correctness the two sides are
+         indistinguishable here (both 60/60, [94.0, 100.0], once the two
+         loop clips are excluded), and this run was never going to settle
+         that question either way.
+Changed: src/redlining/stats.py holds wilson_ci and mcnemar_exact;
+         experiments/stats.py re-exports it. The split exists because
+         src/redlining/score.py reports three of these rates and an
+         installed package cannot import from an unpackaged experiments
+         folder — and two copies of a Wilson interval could drift apart
+         while both kept passing their own tests. A test asserts object
+         identity, not equal behaviour. No scipy: statistics.NormalDist
+         for the quantile, math.comb for the binomial tail.
+Note:    fixing the LaTeX table to carry the new interval column exposed
+         that its percent signs had never been escaped. A bare % starts a
+         LaTeX comment, so every percentage row had been commenting out
+         the rest of itself, trailing row separator included. Any thesis
+         table built from --latex before 5 Oct should be regenerated.

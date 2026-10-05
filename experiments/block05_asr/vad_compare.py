@@ -50,6 +50,7 @@ from pathlib import Path
 
 from redlining.audio_input import LocalTranscriber
 from redlining.paths import DECISIONS, PROCESSED, ROOT, RUNS
+from redlining.stats import fmt_rate, mcnemar_exact
 
 RUN = RUNS / "20260927-130613"
 OUT = PROCESSED / "vad_compare"
@@ -386,6 +387,107 @@ def per_clip_table(scorer, rows: list[dict], spoken: dict) -> str:
     return "\n".join(L)
 
 
+def paired_counts(scorer, rows: list[dict], spoken: dict) -> dict:
+    """Cross-tabulate per-attempt correctness on the two sides.
+
+    Paired on purpose: both sides decoded THE SAME clip, so the attempts are
+    not two independent samples and comparing the two marginal rates as if
+    they were would overstate what this run can tell us. What carries the
+    information is the attempts the two sides disagree about.
+
+    "Correct" is scorer.score_attempts' own exact-match count, called one
+    attempt at a time, rather than a second definition written here. The
+    paired test and the correct-rate column therefore cannot drift apart.
+
+    Args:
+        scorer: The loaded block05 score module.
+        rows: Per-clip result rows.
+        spoken: {tag: what the card said to speak}, devices only.
+
+    Returns:
+        The four paired counts, the two marginals, b, c and the exact
+        two-sided p-value. Strips are excluded -- the card gives a strip no
+        character reference, so there is nothing to be right or wrong about.
+    """
+    def correct(row: dict, side: str) -> bool:
+        """Whether one side got one attempt exactly right."""
+        one = [{"item": row["item"], "raw_transcript": row[f"text_{side}"]}]
+        return scorer.score_attempts(one, spoken)["correct"] == 1
+
+    scored = [r for r in rows if r["item"] in spoken]
+    both = off_only = on_only = neither = 0
+    disagreed = []
+    for row in scored:
+        off_ok, on_ok = correct(row, "off"), correct(row, "on")
+        if off_ok and on_ok:
+            both += 1
+        elif off_ok:
+            off_only += 1
+            disagreed.append((row, "off"))
+        elif on_ok:
+            on_only += 1
+            disagreed.append((row, "on"))
+        else:
+            neither += 1
+
+    # b and c in McNemar's notation: the discordant pairs, one way each.
+    b, c = off_only, on_only
+    return {"n": len(scored), "both": both, "neither": neither,
+            "b_off_only": b, "c_on_only": c,
+            "off_correct": both + b, "on_correct": both + c,
+            "p_exact": mcnemar_exact(b, c), "disagreed": disagreed}
+
+
+def paired_report(paired: dict) -> str:
+    """Render the paired comparison.
+
+    Args:
+        paired: The dict from paired_counts().
+
+    Returns:
+        The block, ready to print.
+    """
+    n = paired["n"]
+    b, c = paired["b_off_only"], paired["c_on_only"]
+    L = [f"  Paired comparison, vad_filter=False vs True over the same {n} "
+         f"attempt(s)",
+         "  Correct means the normalised tag equals the card exactly, the "
+         "same test the correct column above uses.",
+         "",
+         f"    {'':<26}{'k/n':<8}{'rate':>7}  95% CI",
+         f"    vad_filter=False correct  {fmt_rate(paired['off_correct'], n)}",
+         f"    vad_filter=True  correct  {fmt_rate(paired['on_correct'], n)}",
+         "",
+         "    paired table",
+         f"      both right            {paired['both']:>3}",
+         f"      both wrong            {paired['neither']:>3}",
+         f"      b: only OFF right     {b:>3}",
+         f"      c: only ON right      {c:>3}",
+         "",
+         f"    exact McNemar: b = {b}, c = {c}, "
+         f"p = {paired['p_exact']:.4f}"]
+    if b + c == 0:
+        L.append("    No attempt was decided differently by the two sides, "
+                 "so there is nothing to test and p is 1 by definition.")
+    else:
+        L.append(f"    Only the {b + c} discordant attempt(s) carry any "
+                 f"information; the {paired['both'] + paired['neither']} the "
+                 f"two sides agreed on carry none.")
+        for row, winner in paired["disagreed"]:
+            L.append(f"      {row['item']:<7} a{row['attempt_no']}  only "
+                     f"{winner} got it right")
+    L += ["",
+          "    Exact binomial, not the chi-square form: that approximation "
+          "should not be trusted below about b + c = 25, and this is far "
+          "below it.",
+          f"    p = {paired['p_exact']:.4f} is NOT evidence that the two "
+          "sides are equivalent -- with this many discordant pairs the test "
+          "could not have detected a difference of any size. It says this "
+          "run does not separate them on per-attempt correctness, which is "
+          "a statement about the run, not about VAD."]
+    return "\n".join(L)
+
+
 def table(rows: list[dict]) -> str:
     """Render the per-side totals.
 
@@ -542,6 +644,10 @@ def main() -> None:
     print("\n  Character error rate per clip, worst first")
     print(per_clip_table(scorer, rows, spoken))
 
+    paired = paired_counts(scorer, rows, spoken)
+    print()
+    print(paired_report(paired))
+
     changed = changed_rows(rows)
     print(f"\n  {len(changed)} of {len(rows)} attempt(s) changed transcript:")
     for r in changed:
@@ -581,7 +687,11 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "vad_compare.json").write_text(json.dumps(
         {"run": args.run.name, "model": args.model, "decode": DECODE,
-         "noise_dbfs": NOISE_DBFS, "attempts": rows, "probes": probe_rows},
+         "noise_dbfs": NOISE_DBFS,
+         # The disagreed rows carry Path objects and are already in
+         # "attempts"; only the counts and the p-value are recorded here.
+         "paired": {k: v for k, v in paired.items() if k != "disagreed"},
+         "attempts": rows, "probes": probe_rows},
         indent=1, ensure_ascii=False), encoding="utf-8")
     with open(args.out / "vad_compare.csv", "w", newline="",
               encoding="utf-8") as handle:
