@@ -37,7 +37,7 @@ from pathlib import Path
 from redlining.checklist import load_checklist
 from redlining.normalise import normalise_tag
 from redlining.paths import DECISIONS, ROOT
-from redlining.walker_card import card, load_overrides
+from redlining.walker_card import VERSIONS, card, load_overrides
 
 FAULTS = DECISIONS / "faults.csv"
 CARD = ROOT / "walker_card.txt"
@@ -71,19 +71,36 @@ def reference_card(faults_path: Path, card_path: Path) -> tuple[dict, list[str]]
 
     if card_path.exists():
         printed = card_path.read_text(encoding="utf-8").splitlines()
-        rebuilt = card(items, override)
-        differ = [n for n, (a, b) in enumerate(zip(rebuilt, printed), 1)
-                  if a.rstrip() != b.rstrip()]
-        if differ or len(rebuilt) != len(printed):
+        # Every known card version is tried, and ONE of them must match line
+        # for line. The guard is as strict as it was -- an exact match is
+        # still required -- but there is now more than one card to be exact
+        # against: run 20260927-130613 was walked with v1 and a later run
+        # will be walked with v2, which reworded the strip lines. Hard-coding
+        # v1 would reject a v2 card as a fault-set drift, and hard-coding v2
+        # would reject the card this run was actually read from.
+        matched, differ = None, {}
+        for version in VERSIONS:
+            rebuilt = card(items, override, version=version)
+            off = [n for n, (a, b) in enumerate(zip(rebuilt, printed), 1)
+                   if a.rstrip() != b.rstrip()]
+            if not off and len(rebuilt) == len(printed):
+                matched = version
+                break
+            differ[version] = off or [f"length {len(rebuilt)}"
+                                      f" vs {len(printed)}"]
+        if matched is None:
+            detail = "; ".join(f"v{v}: line(s) {d[:5]}"
+                               for v, d in differ.items())
             raise SystemExit(
-                f"the card rebuilt from {faults_path.name} does not match "
-                f"{card_path.name} (line(s) {differ[:5]}). The walker read a "
+                f"the card rebuilt from {faults_path.name} matches no known "
+                f"version of {card_path.name} ({detail}). The walker read a "
                 "card this fault set no longer produces; the reference is not "
                 "trustworthy and nothing is scored."
             )
         notes.append(f"  reference rebuilt from the checklist and "
                      f"{faults_path.name}, and it matches {card_path.name} "
-                     f"line for line ({len(printed)} lines)")
+                     f"line for line as card v{matched} "
+                     f"({len(printed)} lines)")
     else:
         notes.append(f"  no {card_path.name} on disk; reference rebuilt from "
                      f"the checklist and {faults_path.name} and NOT checked "

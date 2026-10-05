@@ -1,0 +1,78 @@
+WALKER CARD   cabinet 20160387   70 positions   v2
+In the order the app asks. Read the position, then do what the card says.
+
+  #  band  position                                      say / do
+     ----------------------------------------------------------------------------------
+
+  1  1     left frame, row 2, position 1                 -1F1
+  2  1     left frame, row 2, position 2                 -1F1
+  3  1     left frame, row 3, position 1                 -5F3
+  4  1     left frame, row 3, position 2                 -5F2
+  5  1     left frame, row 3, position 3                 -5F3
+  6  1     left frame, row 3, position 4                 -6F1
+  7  1     left frame, row 4, position 1                 -2Q1
+  8  1     right frame, row 2, position 1                -1Q2
+  9  1     right frame, row 3, position 1                -1Q3
+ 10  1     right frame, row 4, position 1                -2Q2
+ 11  1     right frame, row 5, position 1                -2Q3
+
+ 12  2     left frame, row 3, position 5                 -6F4
+ 13  2     left frame, row 3, position 6                 -14F1
+ 14  2     left frame, row 4, position 2                 -7F1
+ 15  2     left frame, row 4, position 3                 -7F2
+ 16  2     left frame, row 4, position 4                 -7F3
+ 17  2     left frame, row 4, position 5                 -7F4
+ 18  2     left frame, row 4, position 6                 -7F5
+ 19  2     left frame, row 4, position 7                 -7F6
+ 20  2     left frame, row 4, position 8                 -7F7
+ 21  2     left frame, row 4, position 9                 -7F8
+ 22  2     left frame, row 4, position 10                -7F9
+ 23  2     left frame, row 4, position 11                -8F1
+ 24  2     left frame, row 4, position 12                -8F2
+ 25  2     left frame, row 4, position 13                -8F3
+ 26  2     left frame, row 4, position 14                -8F4
+ 27  2     left frame, row 4, position 15                -8F5
+ 28  2     left frame, row 4, position 16                -8F6
+ 29  2     left frame, row 4, position 17                -8F8
+ 30  2     left frame, row 4, position 18                -8F7
+ 31  2     right frame, row 2, position 2                -13K2
+ 32  2     right frame, row 2, position 3                -3F1
+ 33  2     right frame, row 2, position 4                -3F2
+ 34  2     right frame, row 2, position 5                -3F3
+ 35  2     right frame, row 2, position 6                -3F4
+ 36  2     right frame, row 3, position 2                -13K2
+ 37  2     right frame, row 3, position 3                -4F1
+ 38  2     right frame, row 3, position 4                -4F2
+ 39  2     right frame, row 3, position 5                -4F3
+ 40  2     right frame, row 3, position 6                -4F5
+ 41  2     right frame, row 3, position 7                -9F9
+ 42  2     right frame, row 3, position 8                -4F7
+ 43  2     right frame, row 4, position 2                -11F1
+ 44  2     right frame, row 4, position 3                -11F2
+ 45  2     right frame, row 4, position 4                -12F1
+ 46  2     right frame, row 4, position 5                -12F2
+ 47  2     right frame, row 4, position 6                -12F3
+ 48  2     right frame, row 4, position 7                -12F4
+ 49  2     right frame, row 4, position 8                -12F6
+ 50  2     right frame, row 4, position 9                -12F5
+ 51  2     right frame, row 5, position 2                -13K3
+ 52  2     right frame, row 5, position 3                -10F1
+ 53  2     right frame, row 5, position 4                -10F4
+ 54  2     right frame, row 5, position 5                -10F3
+
+ 55  3     left frame, row 1, strip X1  (6 terminals)    count the terminals, left to right
+ 56  3     left frame, row 1, strip X4  (9 terminals)    count the terminals, left to right
+ 57  3     left frame, row 1, strip X5  (20 terminals)   count the terminals, left to right
+ 58  3     left frame, row 3, position 7                 -14K2
+ 59  3     left frame, row 4, position 19                -14K1
+ 60  3     left frame, row 5, position 1                 -1F2
+ 61  3     left frame, row 5, position 2                 -1F3
+ 62  3     left frame, row 5, position 3                 -2F1
+ 63  3     left frame, row 5, position 4                 -2F2
+ 64  3     left frame, row 5, position 5                 -2F3
+ 65  3     right frame, row 1, strip X2  (11 terminals)  count the terminals, left to right
+ 66  3     right frame, row 1, strip X3  (11 terminals)  count the terminals, as if one L terminal were absent
+ 67  3     right frame, row 1, strip X6  (7 terminals)   count the terminals, left to right
+ 68  3     right frame, row 1, strip X7  (12 terminals)  count the terminals, left to right
+ 69  3     right frame, row 1, strip X8  (5 terminals)   count the terminals, omit the bracket count
+ 70  3     right frame, row 5, position 6                -13K4
