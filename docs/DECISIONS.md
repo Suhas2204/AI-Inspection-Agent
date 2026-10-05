@@ -577,3 +577,77 @@ Gate:    MockLLM is a stand-in, not an evaluation. It is a fixed phrase
          is that it CANNOT get the answer, rewrite a reading or reach a
          verdict however it behaves — which is the part that should not
          depend on the model.
+
+### Block 7 — LLM orchestrator — a real model, measured — 5 Oct
+
+Ran:     LlamaCppLLM against the shared llama.cpp server over
+         OpenAI-compatible chat completions, temperature 0, 60 s ceiling,
+         no retries. 22 utterances covering all six tools plus clarify,
+         one request each, each judged from the state in which its intent
+         is the right call.
+Found:   Gemma-4-26B-A4B-it-UD-Q4_K_XL 21/22 = 95%, Wilson 95% [78, 99].
+         Qwen3.8-27B-UD-Q8_K_XL 20/22 = 91%, Wilson 95% [72, 97].
+         Latency over the 21 requests after the first: Gemma median
+         0.47 s, mean 0.70 s, range 0.36-2.95. Qwen median 1.33 s, mean
+         1.72 s, range 1.00-4.00. First request: Gemma 2.95 s, already
+         loaded; Qwen 7.19 s, swapped in on demand. No transport failure
+         and no invalid tool call from either model.
+Decided: Gemma. The accuracy intervals overlap almost entirely, so this
+         measurement does NOT separate the two on routing, and saying
+         95% beats 91% on 22 utterances would be reading noise. The
+         decision rests on latency, where 0.47 s against 1.33 s is a
+         clean 3x on the same hardware and the same prompts, and on cold
+         start, which a trainee pays whenever the server has swapped the
+         model out. A dispatcher someone stands at a cabinet waiting for
+         is chosen on the axis that is actually separated.
+Found:   the misses are the same shape in both models: the model answered
+         from the transcript instead of calling the tool that answers
+         properly. Gemma took "skip position 4" as a request for the
+         location and read the location back. Qwen answered "how many are
+         left" from the remaining count already in the transcript rather
+         than calling progress, and routed "whereabouts am I meant to be
+         standing" to repeat rather than explain_location. Neither model
+         reached for the answer, and no miss was a fault of the client.
+Changed: the harness, and it moved the number. The first sweep judged
+         every utterance from ONE transcript that already held a
+         next_location result, and Gemma scored 0/4 on next_location
+         there -- not a routing failure: it read the location back out of
+         the context it had been handed. That scored the harness, not the
+         model. Each intent is now judged in a state where it is
+         unambiguously the right call -- "fresh", nothing open as at the
+         start of a run, for next_location; "open", a position given out
+         and waiting for a reading, for the rest -- and Gemma went
+         77% -> 95% on the same utterances with the same model and the
+         same client.
+Decided: the state is part of the measurement and is recorded per row.
+         No single state makes all seven intents correct: from a
+         transcript holding a location, "where next" can be answered by
+         reading it back; from a transcript with nothing open, a bare
+         reading has no position to be judged against. A measurement that
+         hid which state it used would be unreproducible and, as above,
+         wrong by up to 18 points.
+Note:    per-utterance rows not retained; re-measurement pending. The
+         sweep printed a summary and discarded the rows, so the
+         aggregates above are what survived. Which utterance went where
+         is recoverable from the printed per-intent tallies and the named
+         misses; the per-utterance latencies are not, and rebuilding them
+         would mean spending the shared server's time again. The test now
+         writes every row to data/processed/llm_intent/<model>.csv and
+         .json after each request, so the next sweep is the one to cite.
+         Treat every number here as provisional until it lands.
+Gate:    22 utterances is a first measurement, not proof. One author
+         wrote them, which makes them a guess at how a trainee speaks and
+         not a sample of it; three or four per intent cannot separate 95%
+         from 91%, which is what the overlapping intervals say outright;
+         and none of this is a walk -- every utterance was judged from a
+         short fixed transcript, so multi-turn dispatch, recovery after a
+         clarify, and behaviour under the re-ask budget are all
+         unmeasured. Extend the utterances from things people actually
+         said, as the carrier phrases are to be extended, before any of
+         this is quoted as a model comparison.
+Note:    the entry above says "no network" and "MockLLM is the only
+         implementation here". Both were true when written; LlamaCppLLM
+         makes neither true, and the module docstring was corrected with
+         it. Every offline test still runs with no server, and the
+         integration test is skipped unless it is asked for and the
+         server answers.
