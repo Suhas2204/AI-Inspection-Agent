@@ -3,13 +3,19 @@
 import pytest
 
 from redlining.normalise import (
+    DIGIT_WORDS,
+    LEADING_FILLER,
     MAX_TOKEN_RUN,
     MAX_TOKENS,
+    PART_LETTER_HOMOPHONES,
+    PHONETIC,
+    TEEN_TENS_WORDS,
     compact,
     normalise_part,
     normalise_rating,
     normalise_tag,
     runaway,
+    strip_leading_filler,
 )
 
 
@@ -187,3 +193,75 @@ def test_a_short_repeat_that_whisper_punctuates_unevenly_is_one_run():
     """Punctuation is stripped, so "9, 9. 9," is one run of three, not three."""
     reason = runaway("9, 9. 9, 9. 9, 9. 9.", "tag")
     assert "repeated '9' 7 times" in reason
+
+
+# ------------------------------------------------- leading filler
+
+def test_the_vad_on_transcript_that_motivated_this_now_normalises():
+    """"So, minus 12 F3." is -12F3.
+
+    Verbatim from the VAD comparison: switching vad_filter=True on made
+    Whisper write that clip as a sentence. Before the strip it became
+    "-SO12F3", failed the tag shape, and a clean read turned into an abstain.
+    """
+    result = normalise_tag("So, minus 12 F3.")
+    assert result.value == "-12F3"
+    assert result.well_formed
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("So, minus 12 F3.", "-12F3"),
+    ("so minus 1 f1", "-1F1"),
+    ("So so minus 1 f1", "-1F1"),          # a run of filler, not just one
+    ("minus 1 f1", "-1F1"),                # nothing to strip
+])
+def test_leading_filler_does_not_reach_the_value(raw, expected):
+    """Filler at the front is punctuation, whether there is one word or three."""
+    assert normalise_tag(raw).value == expected
+
+
+def test_filler_in_the_middle_is_still_an_error():
+    """A stray word inside a read stays visible; only the FRONT is stripped.
+
+    This is the laundering guard for LEADING_FILLER. Dropping "so" wherever
+    it appeared would quietly repair "minus 12 so f3" into a legal tag, and
+    a read that went wrong in the middle is exactly what must not be
+    repaired (CONTEXT §7).
+    """
+    result = normalise_tag("minus 12 so f3")
+    assert not result.well_formed
+    assert result.value == "-12SOF3"
+
+
+def test_a_transcript_of_nothing_but_filler_reads_as_nothing():
+    """Filler only is "nothing recognised", which abstains -- not a tag."""
+    result = normalise_tag("So.")
+    assert not result.well_formed
+    assert result.value == ""
+
+
+def test_filler_is_stripped_in_every_normaliser():
+    """Part and rating reads get the same treatment as tags."""
+    assert normalise_part("so a nine f zero three one one six").value == "A9F03116"
+    assert normalise_rating("so i c sixty n b sixteen").value == compact("iC60N B16")
+
+
+def test_no_filler_word_can_also_be_content():
+    """LEADING_FILLER must not overlap any vocabulary that carries meaning.
+
+    "oh" is the reason this test exists: it is a sentence opener in English
+    and a ZERO in DIGIT_WORDS, so stripping it would delete a spoken digit.
+    Anything added to LEADING_FILLER has to clear this.
+    """
+    content = (set(DIGIT_WORDS) | set(TEEN_TENS_WORDS) | set(PHONETIC)
+               | set(PART_LETTER_HOMOPHONES))
+    overlap = LEADING_FILLER & content
+    assert not overlap, f"{overlap} would be stripped out of a real read"
+
+
+def test_strip_leading_filler_leaves_a_clean_token_list_alone():
+    """The helper is a no-op on tokens that do not start with filler."""
+    assert strip_leading_filler(["minus", "1", "f1"]) == ["minus", "1", "f1"]
+    assert strip_leading_filler(["so", "minus", "1"]) == ["minus", "1"]
+    assert strip_leading_filler(["so"]) == []
+    assert strip_leading_filler([]) == []

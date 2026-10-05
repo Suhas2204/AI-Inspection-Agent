@@ -53,6 +53,25 @@ PHONETIC = {
 # Whisper writes prose. These are filler, not content.
 NOISE_WORDS = {"the", "and", "a", "um", "uh", "er", "please", "okay", "ok"}
 
+# Sentence openers, dropped only at the FRONT of a transcript. Whisper
+# sometimes writes the clip as a sentence: "So, minus 12 F3." for a clip that
+# says nothing but the tag. Found when vad_filter=True was switched on, which
+# is where it showed up; the pre-VAD decode of that same clip was clean.
+#
+# Leading-only, not added to NOISE_WORDS, and this is the whole point of a
+# second list: NOISE_WORDS drops its members wherever they appear, and a
+# stray word in the MIDDLE of a tag read is evidence that something went
+# wrong with the read. Dropping it there would launder exactly the defect
+# this project measures (CONTEXT §7). At the front it is punctuation.
+#
+# Measured, not imagined, per the warning at the top of this module. Every
+# transcript on hand was checked for a leading token that is not a digit, a
+# number word or a letter -- the 73 attempts of run 20260927-130613, both
+# sides of all 72 clips in the VAD comparison, and the 19 rows of
+# transcripts.csv -- and "so" is the only one. Extend this from real
+# transcripts when another appears, never with a word any vocabulary above
+# could read as content (test_normalise.py enforces that much).
+LEADING_FILLER = {"so"}
 
 # 'a' is both an article and the letter A. In part-number mode it is a letter.
 PART_LETTER_HOMOPHONES = {"a": "A", "ay": "A", "eh": "A", "be": "B", "bee": "B",
@@ -154,6 +173,30 @@ def _expand_repeats(tokens: list[str]) -> list[str]:
     return out
 
 
+def strip_leading_filler(tokens: list[str]) -> list[str]:
+    """Drop sentence-opener filler from the front of a token list.
+
+    Only the front, and only LEADING_FILLER. See that set for why the two
+    restrictions matter.
+
+    Args:
+        tokens: Tokens from _pre(), or any token list. Case and trailing
+            punctuation are ignored, so session.count_tokens can pass its
+            uppercase tokens through unchanged.
+
+    Returns:
+        The tokens with any run of leading filler removed, in the case they
+        were given in. A transcript that
+        is nothing but filler comes back empty, which reads downstream as
+        "nothing was read" -- the right answer for a clip with no tag in it.
+    """
+    first = 0
+    while (first < len(tokens)
+           and tokens[first].strip(".,;:!?").lower() in LEADING_FILLER):
+        first += 1
+    return tokens[first:]
+
+
 def _longest_run(tokens: list[str]) -> tuple[str, int]:
     """Find the most-repeated token run.
 
@@ -224,7 +267,7 @@ def normalise_part(raw: str) -> Normalised:
         Normalised(kind="part"), e.g. value "A9F03116". well_formed is False
         for unknown tokens, nothing recognised, or an implausible shape.
     """
-    tokens = _expand_repeats(_pre(raw))
+    tokens = strip_leading_filler(_expand_repeats(_pre(raw)))
     out: list[str] = []
     unknown: list[str] = []
 
@@ -283,7 +326,7 @@ def normalise_rating(raw: str) -> Normalised:
         Normalised(kind="rating"). well_formed is False for unknown tokens or
         nothing recognised.
     """
-    tokens = _expand_repeats(_pre(raw))
+    tokens = strip_leading_filler(_expand_repeats(_pre(raw)))
     out: list[str] = []
     unknown: list[str] = []
 
@@ -337,7 +380,7 @@ def normalise_tag(raw: str) -> Normalised:
     # Whisper punctuates: 'minus 5F3.' arrives with the stop attached to the
     # token. Found in the first live run, 31 Aug -- it cost 2 of 10 items.
     tokens = [t.strip(".,;:!?") for t in _expand_repeats(_pre(raw))]
-    tokens = [t for t in tokens if t]
+    tokens = strip_leading_filler([t for t in tokens if t])
     out: list[str] = []
     unknown: list[str] = []
 

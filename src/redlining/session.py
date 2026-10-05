@@ -30,10 +30,12 @@ from .adjudicate import (
 )
 from .checklist import Item, load_checklist
 from .normalise import (
+    NOISE_WORDS,
     normalise_part,
     normalise_rating,
     normalise_tag,
     runaway,
+    strip_leading_filler,
 )
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
@@ -158,6 +160,59 @@ def runaway_reason(read: Read) -> str:
     return ""
 
 
+def count_tokens(text: str) -> list[str]:
+    """Tokenise a counts transcript, uppercase, glued tokens split.
+
+    Shared by parse_counts and unknown_labels on purpose. A token that one of
+    them sees and the other does not is exactly how "M1" slipped through at
+    -X1 in run 20260927-130613: the parser dropped it in silence, nothing
+    else looked, and the missing N was published as a cabinet fault.
+
+    Args:
+        text: Raw counts transcript, e.g. "N 8 L 8 PE 8".
+
+    Returns:
+        Tokens, leading filler removed (see normalise.LEADING_FILLER).
+    """
+    raw = text.replace(",", " ").replace(":", " ").upper().split()
+    toks: list[str] = []
+    for t in raw:
+        toks.extend(GLUED_RE.findall(t) or [t])
+    return strip_leading_filler(toks)
+
+
+def unknown_labels(text: str) -> list[str]:
+    """Words in a counts read that name no terminal function this code knows.
+
+    The -X1 case of run 20260927-130613: the walker counted correctly and
+    Whisper wrote "L3, M1, PE1, Bracket 1". parse_counts has no "M", so it
+    kept {L: 3, PE: 1, BRACKET: 1}, the adjudicator saw N missing, and an
+    untouched strip was flagged "N: read 0, expected 1" -- a recogniser error
+    published as a finding about the cabinet, on a verdict that is not an
+    abstain and so was never re-asked.
+
+    An unknown label means the read cannot be trusted as a whole, because
+    nothing here can tell "M" misheard for "N" from a count simply not
+    spoken. So it is named, not guessed at and not dropped.
+
+    Args:
+        text: Raw counts transcript.
+
+    Returns:
+        The unknown words, in the order spoken, without duplicates. Number
+        words and NOISE_WORDS are not labels and never appear.
+    """
+    out: list[str] = []
+    for t in count_tokens(text):
+        if not t.isalpha():
+            continue
+        if t in FUNCTIONS or t in WORD_DIGITS or t.lower() in NOISE_WORDS:
+            continue
+        if t not in out:
+            out.append(t)
+    return out
+
+
 def parse_counts(text: str) -> dict:
     """Turn spoken strip counts into a function -> count dict.
 
@@ -166,16 +221,18 @@ def parse_counts(text: str) -> dict:
     - The count may come before or after its function ("3 L" or "L 3").
     - Only known functions (N, L, PE, BRACKET) become keys.
 
+    A word this does not know is IGNORED here and reported by unknown_labels,
+    which step_item abstains on. Ignoring it quietly is what made -X1 a false
+    finding; the two functions together are the fix, so a caller that parses
+    counts without also asking unknown_labels has only half of it.
+
     Args:
         text: Raw counts transcript, e.g. "N 8 L 8 PE 8".
 
     Returns:
         Dict such as {"N": 8, "L": 8, "PE": 8}. Empty if nothing parsed.
     """
-    raw = text.replace(",", " ").replace(":", " ").upper().split()
-    toks: list[str] = []
-    for t in raw:
-        toks.extend(GLUED_RE.findall(t) or [t])
+    toks = count_tokens(text)
 
     out: dict = {}
     pending_key = pending_value = None
@@ -241,9 +298,33 @@ def step_item(item: Item, adj: Adjudicator, source, log: RunLog,
                           {"raw": read.raw}, {"tag": item.tag})
         normalised, well_formed = "", False
     elif item.kind == "strip":
-        verdict = adj.judge_strip(item.tag, parse_counts(read.counts_raw))
-        normalised = str(parse_counts(read.counts_raw))
-        well_formed = bool(parse_counts(read.counts_raw))
+        counts = parse_counts(read.counts_raw)
+        strays = unknown_labels(read.counts_raw)
+        normalised = str(counts)
+        well_formed = bool(counts) and not strays
+        if counts and strays:
+            # Abstained, not judged, for the reason in unknown_labels: an
+            # unknown label is indistinguishable from a count that was never
+            # spoken, so the counts that DID parse cannot be trusted either.
+            # This is the branch -X1 needed and did not have.
+            #
+            # "counts and strays", not "strays" alone: a read that parsed
+            # NOTHING is already handled, and better, by judge_strip's "no
+            # counts were given". Whisper writes silence as "You", and
+            # "the read names YOU" would be a worse account of an empty clip
+            # than the one that branch already gives. The danger this guards
+            # is the PARTIAL read -- counts that look complete and are not.
+            verdict = Verdict(
+                ABSTAIN,
+                f"the read names {', '.join(strays)}, which is no terminal "
+                f"function here (known: "
+                f"{', '.join(sorted(FUNCTIONS))}); the counts cannot be "
+                f"trusted. Ask again",
+                item.tag, {"counts": counts},
+                {"counts": dict(adj.expected_counts(item.tag)),
+                 "tag": item.tag})
+        else:
+            verdict = adj.judge_strip(item.tag, counts)
     elif mode == "tag":
         t = normalise_tag(read.tag_raw)
         normalised = t.value
