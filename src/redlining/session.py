@@ -5,17 +5,24 @@
   any hint destroys the confirmation-bias protection of CONTEXT §7.
 - Re-asks are silent ("please read it again"), at most two. Then the item is
   flagged and the run moves on. The run never stops.
-- Input is pluggable: typed (default), scripted smoke test, or live microphone.
+- Input is pluggable: typed (default), scripted smoke test, or live
+  microphone. --agent swaps the fixed walk for a conversation: the
+  trainee says where they want to go and the orchestrator dispatches,
+  through the same step_item, so the log is the same log.
 
 Run:
     uv run python -m redlining.session                 # typed input
     uv run python -m redlining.session --scripted      # smoke test, no keyboard
     uv run python -m redlining.session --live --kind strip --model small --speak
+    uv run python -m redlining.session --agent --speak        # voice loop
+    uv run python -m redlining.session --agent --text         # typed loop
+    uv run python -m redlining.session --agent --llm          # real model
 """
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import re
 import time
 from dataclasses import dataclass
@@ -37,6 +44,7 @@ from .normalise import (
     runaway,
     strip_leading_filler,
 )
+from .audio_input import VAD_MAX_S, VAD_SILENCE_S
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
 
@@ -455,6 +463,365 @@ class ScriptedInput:
         return Read(counts_raw=" ".join(f"{k} {v}" for k, v in counts.items()))
 
 
+# ---------------------------------------------------------------------------
+# The conversational loop (Block 7, experimental)
+# ---------------------------------------------------------------------------
+
+# Words that end the run. The LOOP owns stopping, not the model: there is no
+# end_run tool and there is not going to be one. A model that could end a run
+# could end it early, and a walk cut short at position 12 scores the 58
+# positions after it as never walked.
+EXIT_WORDS = frozenset({"done", "all done", "finished", "finish", "stop",
+                        "quit", "exit", "that is it", "thats it"})
+
+# A ceiling on turns, for the same reason every turn has one: a loop that
+# cannot end is a loop that holds the log open.
+MAX_TURNS = 400
+
+OPENING = ("Say 'where next' to start. Say 'done' when you are finished.")
+
+CLOSING = "That is every position. The walk is finished."
+
+NOTHING_OPEN = "Nothing is open yet. Say 'where next' to start."
+
+
+def voice_of(tool: str, result: dict, kind: str | None = None) -> str:
+    """What the agent says aloud after one tool ran.
+
+    The counterpart of orchestrator.redact(), pointing the other way.
+    redact() decides what the MODEL may be told; this decides what the
+    TRAINEE may be told, and the two withhold different things for
+    different reasons.
+
+    submit_reading is the whole reason this function exists rather than the
+    loop reading a field out of the result. The result carries outcome,
+    reason and expected -- the full verdict, because the log needs it -- and
+    none of it may be spoken. A re-ask in this study is silent (session.py:
+    "no echo, no hint"), because a trainee who learns the last read was
+    wrong reads the next one differently. So all that is said is the re-ask
+    wording, or nothing at all.
+
+    explain_location is the other one worth stating. Its result carries a
+    strip's terminal count, because the walker card prints it. It is still
+    not spoken HERE: the trainee has been sent to that strip to count the
+    terminals, and an agent that read the count out would be answering the
+    question it just asked.
+
+    Args:
+        tool: The tool that ran.
+        result: Its full, unredacted result.
+        kind: "device" or "strip" for the open position, where the result
+            does not carry it. Used only to choose the re-ask wording.
+
+    Returns:
+        What to say. "" says nothing, which is a real answer here.
+    """
+    if tool == "submit_reading":
+        if not result.get("ask_again"):
+            return ""                 # accepted. Nothing is revealed, ever.
+        return ("Please count them again." if kind == "strip"
+                else "Please read it again.")
+
+    if tool == "next_location":
+        if result.get("done"):
+            return CLOSING
+        asks = ("Count the terminals." if result.get("kind") == "strip"
+                else "Read the tag.")
+        return f"{result['location']}. {asks}"
+
+    if tool == "repeat":
+        if result.get("nothing_to_repeat"):
+            return NOTHING_OPEN
+        return f"{result['location']}. {result['say']}"
+
+    if tool == "progress":
+        return (f"{result['read']} read, {result['skipped']} skipped, "
+                f"{result['remaining']} to go.")
+
+    if tool == "skip":
+        if result.get("error"):
+            return f"There is no position {result.get('asked_for')}."
+        return (f"Position {result['skipped']} skipped. "
+                f"{result['remaining']} to go.")
+
+    if tool == "explain_location":
+        if result.get("nothing_open"):
+            return NOTHING_OPEN
+        # No terminal count: see the docstring.
+        return (f"{result['frame']}, row {result['row']}, "
+                f"position {result['place_in_row']}.")
+
+    return ""
+
+
+def _is_exit(utterance: str) -> bool:
+    """Whether the trainee just ended the run.
+
+    Args:
+        utterance: What they said.
+
+    Returns:
+        True if the whole utterance is an exit phrase. Whole, not contained:
+        "I am not done yet" is not a request to stop.
+    """
+    bare = re.sub(r"[^a-z0-9 ]+", "", utterance.lower()).strip()
+    bare = re.sub(r"\s+", " ", bare)
+    return bare in EXIT_WORDS
+
+
+@dataclass(frozen=True)
+class Heard:
+    """One turn as it arrived from the trainee.
+
+    The clip is part of the turn, not an afterthought. Block 8's gate is
+    that the audio behind any flag can be replayed, and flags are not known
+    while recording, so a turn that was recorded has to carry where.
+
+    Attributes:
+        text: What was heard, exactly as it arrived.
+        audio_path: The clip it came from, or None for a typed turn. None is
+            the honest answer there, not a path to a file nobody wrote.
+        confidence: ASR confidence (0-1), if known.
+    """
+    text: str
+    audio_path: str | None = None
+    confidence: float | None = None
+
+    @classmethod
+    def of(cls, value) -> "Heard":
+        """Accept either a Heard or a bare string.
+
+        A typed listener and a test script return strings, and there is no
+        clip behind either. Wrapping them here keeps listen() simple for the
+        callers that have nothing to carry.
+
+        Args:
+            value: A Heard, or the words on their own.
+
+        Returns:
+            A Heard.
+        """
+        return value if isinstance(value, cls) else cls(str(value))
+
+
+def dispatch_note(out: dict, failure: dict | None = None) -> str:
+    """One line naming what the dispatcher chose this turn.
+
+    Printed, never spoken. Run 20261006-184627 is why it exists: a turn came
+    back as a question instead of a reading and there was no way afterwards
+    to tell whether the model had chosen to speak, whether the request had
+    timed out, or whether the phrase classifier had not recognised it. The
+    three need different fixes and the run recorded none of them.
+
+    Args:
+        out: What Orchestrator.say returned.
+        failure: The dispatcher's newest recorded failure, if this turn
+            added one. LlamaCppLLM turns an error into the same clarify a
+            puzzled model gives, so without this they are indistinguishable.
+
+    Returns:
+        A bracketed line for the terminal.
+    """
+    # Imported here, not at module scope: orchestrator imports this module
+    # for step_item, so the dependency only goes one way at import time.
+    from .orchestrator import CLARIFY
+
+    if "tool" in out:
+        arguments = out.get("arguments") or {}
+        shown = f" {arguments}" if arguments else ""
+        return f"[dispatch: {out['tool']}{shown}]"
+    if failure is not None:
+        return (f"[dispatch: clarify — {failure['kind']}: "
+                f"{failure['detail'][:60]}]")
+    if out.get("reply") == CLARIFY:
+        return "[dispatch: clarify]"
+    return "[dispatch: the model spoke]"
+
+
+def agent_loop(orc, listen, say, max_turns: int = MAX_TURNS) -> int:
+    """Hold one spoken conversation over an Orchestrator.
+
+    The loop owns the microphone and the speaker and nothing else. It does
+    not judge and does not choose a tool: it hands each utterance to the
+    orchestrator and says what comes back.
+
+    One thing it does do is walk. Once a reading has settled, the loop calls
+    next_location itself and says where to go, so a trainee reads a position
+    and is sent to the next one without having to ask. It advances on a
+    settled reading WHATEVER the verdict was -- and that is the whole reason
+    it is safe to do. Advancing only on a correct reading would tell the
+    trainee the outcome by moving, which is the thing re-asks are silent to
+    avoid. A reading still being re-asked does not advance and is answered
+    with the re-ask line and nothing else.
+
+    listen and say are injected rather than built here, so the loop can be
+    driven from a test with no microphone, no model and no sound card. The
+    voice and typed front ends differ only in which listen is passed.
+
+    Args:
+        orc: An Orchestrator.
+        listen: Called for each turn. Returns the trainee's words, or None
+            when there is no more input (end of file, or the mic closed).
+        say: Called with each line to speak. Empty strings are passed on and
+            are expected to say nothing.
+        max_turns: Ceiling on turns.
+
+    Returns:
+        How many turns were taken.
+    """
+    turns = 0
+    say(OPENING)
+    failures = getattr(orc.llm, "failures", None)
+
+    while turns < max_turns:
+        value = listen()
+        if value is None:
+            break
+        turns += 1
+        heard = Heard.of(value)
+        if _is_exit(heard.text):
+            break
+
+        # Captured before dispatch: submit_reading may settle the position,
+        # and the re-ask wording depends on what kind it was.
+        kind = orc.current.kind if orc.current else None
+        before = len(failures) if failures is not None else 0
+
+        try:
+            out = orc.say(heard.text, audio_path=heard.audio_path,
+                          confidence=heard.confidence)
+        except RuntimeError as exc:
+            # submit_reading refuses a reading with no position open rather
+            # than inventing the position it would belong to, and that
+            # refusal is right and stays. What must not happen is the run
+            # ending over it: a trainee reading a label before being sent
+            # anywhere is a thing that happens, and run 20261006-184627 is
+            # the run where it did. So it becomes a prompt.
+            print("    [dispatch: refused, nothing is open]")
+            say(NOTHING_OPEN)
+            continue
+        newest = (failures[-1] if failures is not None
+                  and len(failures) > before else None)
+        print(f"    {dispatch_note(out, newest)}")
+
+        if "reply" in out:
+            say(out["reply"])
+            continue
+
+        say(voice_of(out["tool"], out["result"], kind))
+
+        if (out["tool"] == "submit_reading"
+                and not out["result"]["ask_again"]):
+            moved = orc.call("next_location")
+            say(voice_of("next_location", moved))
+            if moved.get("done"):
+                break
+            continue
+
+        if out["tool"] == "next_location" and out["result"].get("done"):
+            break
+
+    return turns
+
+
+def run_agent(args, adj: Adjudicator, items: list[Item], log: RunLog) -> None:
+    """Build the conversational front end from the CLI flags and run it.
+
+    Args:
+        args: Parsed arguments.
+        adj: Adjudicator for the cabinet.
+        items: Checklist items in walking order.
+        log: RunLog receiving every attempt, in the usual format.
+    """
+    from .audio_input import init_tts, speak as speak_aloud
+    from .orchestrator import LlamaCppLLM, MockLLM, Orchestrator
+
+    llm = LlamaCppLLM() if args.llm else MockLLM()
+    print(f"  dispatcher: {type(llm).__name__}"
+          + (f" ({llm.model})" if args.llm else " (offline phrase mapping)"))
+
+    orc = Orchestrator(adj, items, log, llm, max_reasks=args.max_reasks,
+                       mode=args.mode)
+    # The agent speaks unless told not to. --speak is an opt-in on the other
+    # paths, where the prompt is also on the screen; here the voice IS the
+    # front end. A run that cannot speak says so now, before anyone walks to
+    # the cabinet, rather than printing its lines and looking fine.
+    speaker = init_tts(not args.no_speak)
+    print(f"  voice: {'on' if speaker is not None else 'off, printed only'}")
+
+    if args.text:
+        listen = _typed_listener()
+    else:
+        listen = _voice_listener(log.dir / "audio", args)
+
+    started = time.monotonic()
+    turns = agent_loop(orc, listen, lambda line: speak_aloud(line, speaker))
+    log.duration_s = time.monotonic() - started
+    print(f"\n  {turns} turn(s).")
+
+    orc.finish()
+    triage(log)
+    log.write_report(expected_items=len(items), duration_s=log.duration_s)
+
+
+def _typed_listener():
+    """A listen() that reads lines from the keyboard.
+
+    Returns:
+        The callable. It returns None at end of file, which ends the loop.
+    """
+    def listen() -> str | None:
+        """Read one typed turn.
+
+        Returns:
+            The line, or None at end of file.
+        """
+        try:
+            return input("\n  you> ")
+        except EOFError:
+            return None
+    return listen
+
+
+def _voice_listener(audio_dir: Path, args):
+    """A listen() that records a turn, keeps the WAV and transcribes it.
+
+    Args:
+        audio_dir: Folder for the turn WAVs, one per turn, kept.
+        args: Parsed arguments, for the model size and the VAD settings.
+
+    Returns:
+        The callable.
+    """
+    from .audio_input import LocalTranscriber, Recorder
+
+    audio_dir = Path(audio_dir)
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    recorder = Recorder()
+    asr = LocalTranscriber(args.model)
+    turn = itertools.count(1)
+
+    def listen() -> Heard:
+        """Record, keep and transcribe one turn.
+
+        Returns:
+            The turn, with the clip it was recorded to. The text is "" when
+            nothing was said, and the empty string is passed on rather than
+            swallowed: the dispatcher answers it by asking again, which is
+            the right answer to silence, and a loop that re-recorded
+            instead would hide it. The clip is returned either way, because
+            "they said nothing" is a thing a reviewer may need to hear.
+        """
+        path = audio_dir / f"turn_{next(turn):03d}.wav"
+        _path, reason = recorder.record_until_silence(
+            path, silence_s=args.vad_silence, max_s=args.vad_max)
+        text, conf = asr.transcribe(path)
+        print(f"    heard: {text!r}  [{reason}; {path.name}]")
+        return Heard(text, audio_path=str(path), confidence=conf)
+
+    return listen
+
+
 def main() -> None:
     """CLI: parse flags, build checklist and input source, run, triage, report."""
     ap = argparse.ArgumentParser()
@@ -470,6 +837,24 @@ def main() -> None:
                     help="faster-whisper size: tiny|base|small|medium|large-v3")
     ap.add_argument("--speak", action="store_true",
                     help="read prompts aloud (needs pyttsx3)")
+    ap.add_argument("--agent", action="store_true",
+                    help="conversational loop: the trainee says where to go "
+                         "and an LLM dispatches (Block 7 orchestrator)")
+    ap.add_argument("--text", action="store_true",
+                    help="--agent with typed turns instead of the microphone")
+    ap.add_argument("--no-speak", action="store_true",
+                    help="--agent: print the agent's lines instead of "
+                         "speaking them. It speaks by default: it is a voice "
+                         "loop, so silence is the thing to ask for")
+    ap.add_argument("--llm", action="store_true",
+                    help="--agent with a real model over LLM_URL/LLM_MODEL; "
+                         "the offline phrase mapping otherwise")
+    ap.add_argument("--vad-silence", type=float, default=VAD_SILENCE_S,
+                    help=f"--agent: quiet that ends a spoken turn, in "
+                         f"seconds (default {VAD_SILENCE_S})")
+    ap.add_argument("--vad-max", type=float, default=VAD_MAX_S,
+                    help=f"--agent: ceiling on one spoken turn, in seconds "
+                         f"(default {VAD_MAX_S})")
     ap.add_argument("--mode", choices=["part", "tag"], default="tag",
                     help="'part': part number + rating line. "
                          "'tag': tag only -- cannot detect a wrong part")
@@ -498,6 +883,13 @@ def main() -> None:
     print("Advisory only. This run passes or fails nothing.\n")
 
     log = RunLog(root=Path(args.runs_dir))
+    if args.agent:
+        if args.mode == "tag":
+            print(TAG_MODE_WARNING)
+        run_agent(args, adj, items, log)
+        print(f"\nReport: {log.dir / 'report.md'}")
+        return
+
     if args.scripted:
         source = ScriptedInput(adj)
     elif args.live:

@@ -810,11 +810,18 @@ class _OneReading:
 
     Attributes:
         text: The reading the next call will return.
+        audio_path: Where that reading was recorded, if it was. Block 8's
+            gate is that the audio behind any flag can be replayed, and
+            flags are not known while recording, so every attempt carries
+            its clip.
+        confidence: ASR confidence for it, if known.
     """
 
     def __init__(self):
         """Start with nothing to hand over."""
         self.text = ""
+        self.audio_path: str | None = None
+        self.confidence: float | None = None
 
     def device(self, prompt: str, attempt: int) -> Read:
         """Return the pending text as a device reading.
@@ -824,9 +831,10 @@ class _OneReading:
             attempt: Ignored, for the same reason.
 
         Returns:
-            Read with tag_raw set.
+            Read with tag_raw set, and the clip it came from.
         """
-        return Read(tag_raw=self.text)
+        return Read(tag_raw=self.text, audio_path=self.audio_path,
+                    confidence=self.confidence)
 
     def strip(self, prompt: str, attempt: int) -> Read:
         """Return the pending text as a strip's counts.
@@ -836,9 +844,10 @@ class _OneReading:
             attempt: Ignored, for the same reason.
 
         Returns:
-            Read with counts_raw set.
+            Read with counts_raw set, and the clip it came from.
         """
-        return Read(counts_raw=self.text)
+        return Read(counts_raw=self.text, audio_path=self.audio_path,
+                    confidence=self.confidence)
 
 
 class Orchestrator:
@@ -878,6 +887,8 @@ class Orchestrator:
 
         self._source = _OneReading()
         self._utterance: str | None = None    # the trainee's last words
+        self._audio_path: str | None = None   # and the clip they are from
+        self._confidence: float | None = None
         self._cursor: int | None = None       # index into items, or None
         self._attempt_no = 0
         self._settled: set[int] = set()       # a reading was accepted
@@ -1027,6 +1038,8 @@ class Orchestrator:
         reading = self._utterance
         self._attempt_no += 1
         self._source.text = reading
+        self._source.audio_path = self._audio_path
+        self._source.confidence = self._confidence
         verdict = step_item(item, self.adj, self._source, self.log,
                             self._attempt_no, mode=self.mode)
 
@@ -1161,31 +1174,46 @@ class Orchestrator:
         self._say_tool(name, result)
         return result
 
-    def hear(self, utterance: str) -> None:
+    def hear(self, utterance: str, audio_path: str | None = None,
+             confidence: float | None = None) -> None:
         """Record what the trainee said, without dispatching anything.
 
         The only way words enter this module. submit_reading judges whatever
         was last heard, so this is the single place a reading can come from
         and the model is not one of them.
 
+        The clip and the confidence travel with the words and are recorded
+        with the attempt. They are NOT passed to the model: redact() covers
+        the messages, and nothing puts them there.
+
         Args:
             utterance: The trainee's words, exactly as they arrived.
+            audio_path: Where the utterance was recorded, if it was. A typed
+                turn has none, and None is the honest answer rather than a
+                path to a file that does not exist.
+            confidence: ASR confidence, if known.
         """
         self._utterance = utterance
+        self._audio_path = audio_path
+        self._confidence = confidence
         self.messages.append({"role": "user", "content": utterance})
 
-    def say(self, utterance: str) -> dict:
+    def say(self, utterance: str, audio_path: str | None = None,
+            confidence: float | None = None) -> dict:
         """One turn: give the LLM what the trainee said and act on its decision.
 
         Args:
             utterance: The trainee's words.
+            audio_path: Where they were recorded, if they were. Passed to
+                hear(), recorded with the attempt, never shown to the model.
+            confidence: ASR confidence, if known.
 
         Returns:
             {"tool": name, "arguments": {...}, "result": {...}} when a tool
             ran, or {"reply": text} when the model asked for the request
             again. A reply means no tool ran and no state moved.
         """
-        self.hear(utterance)
+        self.hear(utterance, audio_path=audio_path, confidence=confidence)
         decision = self.llm.decide(self.messages, TOOLS)
 
         if isinstance(decision, Reply):
