@@ -9,7 +9,7 @@ Reply MockLLM uses -- never as a guessed tool call. The unreachable-server
 case is exercised against a closed port, so it needs no network.
 
 Opt-in integration. Dispatch accuracy and latency against a llama.cpp server,
-over about twenty utterances covering every intent. Skipped unless
+over two dozen utterances covering every intent. Skipped unless
 RUN_LLM_TESTS=1 is set AND the server answers AND it lists the model asked
 for, because this is a measurement of a shared machine rather than a property
 of the code. Run it with:
@@ -493,6 +493,16 @@ UTTERANCES = [
     ("", "clarify", "open"),
     ("the weather is terrible in here", "clarify", "open"),
     ("hmm", "clarify", "open"),
+    # Verbatim from run 20261006-184627, which is why they are here: these
+    # are not invented phrasings but what the microphone and Whisper actually
+    # produced, and both went wrong. "Minus one q1" is a correct reading of
+    # position 1 with its digits spoken as words, which Gemma declined under
+    # prompt v1, replying "Please read the tag." instead of submitting it.
+    # "We're next." is what ASR made of "where next" -- a mishearing the
+    # dispatcher still has to survive, because the trainee did ask to be
+    # moved on and MockLLM's regex cannot help with it.
+    ("Minus one q1", "submit_reading", "open"),
+    ("We're next.", "next_location", "fresh"),
 ]
 
 # Above chance (1/7 intents, so 14%) by a wide margin, and well below what a
@@ -662,7 +672,7 @@ def _report(model: str, rows: list[dict], llm: LlamaCppLLM) -> float:
     accuracy = len(right) / len(rows)
     # The first request is reported apart: on this server an unloaded model is
     # swapped in on demand, so request one can carry a model load that the
-    # other twenty-one do not.
+    # rest do not.
     first = rows[0]["latency_s"]
     rest = [r["latency_s"] for r in rows[1:]]
 

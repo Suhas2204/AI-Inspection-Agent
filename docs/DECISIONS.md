@@ -626,6 +626,12 @@ Decided: the state is part of the measurement and is recorded per row.
          reading has no position to be judged against. A measurement that
          hid which state it used would be unreproducible and, as above,
          wrong by up to 18 points.
+Note:    SUPERSEDED by the 6 Oct entry below, do not cite: the
+         accuracies here were measured against dispatch prompt v1 and
+         the 22-item set, both of which have since changed. The
+         latency comparison and the choice of Gemma stand, because a
+         one-sentence prompt change does not move latency and the
+         choice rested on latency and cold start.
 Note:    per-utterance rows not retained; re-measurement pending. The
          sweep printed a summary and discarded the rows, so the
          aggregates above are what survived. Which utterance went where
@@ -651,3 +657,63 @@ Note:    the entry above says "no network" and "MockLLM is the only
          it. Every offline test still runs with no server, and the
          integration test is skipped unless it is asked for and the
          server answers.
+
+### Block 7 — LLM orchestrator — dispatch prompt v2 — 6 Oct
+
+Found:   run 20261006-184627. A trainee at position 1 said "minus one Q
+         one" -- the correct label, digits spoken as words -- and the agent
+         replied "Please read the tag." instead of submitting it. Probed
+         afterwards against Gemma with position 1 open, which is the state
+         that run was in:
+
+             "Minus one q1"      reply, "Please read the tag."
+             "minus one q one"   reply, "Please read the tag."
+             "minus 1q1."        submit_reading
+             "minus 1 q 1"       submit_reading
+
+         The model submits a label whose digits arrived as NUMERALS and
+         declines one whose digits arrived as WORDS. Systematic, not a
+         one-off, and it is the model alone: _is_reading accepts all four
+         and normalise maps all four to the same tag, so a run on MockLLM
+         would have submitted every one of them.
+Decided: one sentence added to submit_reading's description -- digits
+         spoken as words are still the reading, and a label is never
+         re-asked merely because its numbers arrived as words. The likely
+         cause is the sentence already there: "call this only when what
+         they said IS the reading and nothing else", which the model
+         appears to read as excluding "one" as other words.
+Gate:    the example in that sentence is a tag that is NOT in the cabinet.
+         "minus one Q one" was the obvious example to write and it
+         normalises to the tag at position 1, which carries a planted
+         fault -- the prompt would have spelled out the answer to the first
+         position a trainee walks to. The existing leak scan would not have
+         caught it: it reads word by word, and a spoken tag is several
+         words, none of which is a secret on its own. A second scan now
+         normalises every run of two to six consecutive words in the prompt
+         and the schemas and checks THAT against the secrets, with a test
+         that it would have caught the example that was proposed.
+Changed: the prompt is now versioned, PROMPT_VERSION in orchestrator.py.
+         v1 is what the 5 Oct comparison measured; v2 is v1 plus that
+         sentence. Nothing may report dispatch accuracy without saying
+         which version produced it.
+Changed: the measurement set is 24 utterances, up from 22. The two added
+         are verbatim from run 20261006-184627 rather than invented:
+         "Minus one q1", the word-form reading v1 declined, and "We're
+         next.", which is what Whisper made of "where next". The second is
+         a mishearing and belongs in the set for that reason -- the
+         trainee did ask to be moved on, and a dispatcher has to survive
+         ASR as it actually is. This is the Gate on the 5 Oct entry being
+         acted on: the set grows from utterances people actually said.
+Gate:    SUPERSEDED, do not cite: the v1 accuracies. Gemma 21/22 = 95%,
+         Wilson [78, 99], and Qwen 20/22 = 91%, Wilson [72, 97], were
+         measured against prompt v1 and the 22-item set. Both have since
+         changed, so neither figure is current and neither may be quoted as
+         if it were. The LATENCY comparison -- Gemma median 0.47 s against
+         Qwen 1.33 s, and cold start 2.95 s against 7.19 s -- is not touched
+         by a one-sentence prompt change, and the choice of Gemma rested on
+         it, so that decision stands; the accuracy figures do not.
+OPEN:    re-measure both models at v2 over the 24, and report whether the
+         sentence fixed the word-form readings without costing anything
+         elsewhere. Not run yet: the server is shared and this entry is
+         being written before spending on it. Until it is run, the only
+         claim supported here is that v1 declined word-form readings.

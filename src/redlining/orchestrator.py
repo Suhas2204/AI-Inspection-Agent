@@ -241,7 +241,10 @@ TOOLS = [
             "should not try -- a misread has to stay a misread or the run "
             "measures you instead of the trainee. Call this only when what "
             "they said IS the reading and nothing else; if they wrapped it in "
-            "other words, ask them for the reading on its own."),
+            "other words, ask them for the reading on its own. Digits spoken "
+            "as words are still the reading -- \"minus nine Q nine\" is a "
+            "reading exactly as \"minus 9 Q 9\" is -- so never ask for a "
+            "label again merely because its numbers arrived as words."),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -291,6 +294,14 @@ TOOLS = [
 ]
 
 TOOL_NAMES = frozenset(t["name"] for t in TOOLS)
+
+# The dispatch prompt is versioned because changing it invalidates every
+# accuracy number measured against the one before. v1 is what the 5 Oct
+# comparison in DECISIONS.md measured; v2 added the sentence in
+# submit_reading about digits spoken as words, after run 20261006-184627
+# showed Gemma declining "Minus one q1" and re-prompting instead. Anything
+# that reports accuracy must report this alongside it.
+PROMPT_VERSION = "v2"
 
 SYSTEM_PROMPT = """\
 You guide one trainee through a control-cabinet inspection, one position at a

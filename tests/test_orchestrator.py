@@ -25,8 +25,9 @@ import pytest
 
 from redlining.adjudicate import ABSTAIN, MATCH, Adjudicator
 from redlining.checklist import load_checklist
-from redlining.normalise import compact
+from redlining.normalise import compact, normalise_tag
 from redlining.orchestrator import (
+    PROMPT_VERSION,
     SECRET_KEYS,
     SYSTEM_PROMPT,
     TOOL_NAMES,
@@ -229,6 +230,72 @@ def test_the_prompt_and_the_schemas_name_nothing_in_the_cabinet(adj,
     secrets = secrets_of(adj, checklist)
     assert not leaks(SYSTEM_PROMPT, secrets)
     assert not leaks(json.dumps(TOOLS), secrets)
+
+
+def spoken_runs(text: str, length: int = 6) -> list[str]:
+    """Every short run of consecutive words in `text`.
+
+    Args:
+        text: Prompt or schema text.
+        length: Longest run to return. A spoken tag is at most a sign, a
+            number, a letter and a number, so six words covers it with room
+            to spare.
+
+    Returns:
+        Each run of 2..length consecutive words, as a phrase.
+    """
+    words = WORDS.findall(text)
+    return [" ".join(words[i:i + n])
+            for n in range(2, length + 1)
+            for i in range(len(words) - n + 1)]
+
+
+def test_no_phrase_in_the_prompt_normalises_to_a_tag(adj, checklist):
+    """The gap the v2 prompt nearly walked into.
+
+    test_the_prompt_and_the_schemas_name_nothing_in_the_cabinet scans word by
+    word, and a tag SPOKEN is several words: "minus one Q one" contains no
+    secret word and normalises to -1Q1, which is position 1 and carries a
+    planted fault. So the word scan would have passed a prompt that spelled
+    out the answer to the first position a trainee walks to.
+
+    Written when an example of exactly that shape was proposed for
+    submit_reading's description. The example in the prompt is now a tag that
+    is not in the cabinet, and this test is what keeps it that way.
+    """
+    secrets = secrets_of(adj, checklist)
+    text = SYSTEM_PROMPT + " " + json.dumps(TOOLS)
+
+    spelled = [phrase for phrase in spoken_runs(text)
+               if compact(normalise_tag(phrase).value) in secrets]
+    assert not spelled, f"the prompt spells out: {spelled[:5]}"
+
+
+def test_that_scan_would_have_caught_the_example_that_was_proposed(adj,
+                                                                   checklist):
+    """The test above is only worth having if it catches the real case."""
+    secrets = secrets_of(adj, checklist)
+
+    unsafe = [p for p in spoken_runs("digits as words, minus one Q one, count")
+              if compact(normalise_tag(p).value) in secrets]
+    assert unsafe, "the scan must catch a spelled-out tag"
+
+    safe = [p for p in spoken_runs("digits as words, minus nine Q nine, count")
+            if compact(normalise_tag(p).value) in secrets]
+    assert not safe, "and must not object to one that is not in the cabinet"
+
+
+def test_the_prompt_is_versioned_and_says_which_version(adj, checklist):
+    """Accuracy is only meaningful next to the prompt that produced it."""
+    assert PROMPT_VERSION == "v2"
+
+
+def test_the_new_sentence_is_actually_in_the_schema():
+    """What v2 is, pinned, so the version cannot drift from the text."""
+    schema = next(t for t in TOOLS if t["name"] == "submit_reading")
+    assert "spoken as words" in schema["description"]
+    assert schema["parameters"]["properties"] == {}, \
+        "and it still offers nowhere to put words"
 
 
 def test_the_verdict_is_withheld_as_well_as_the_answer(adj, checklist,
