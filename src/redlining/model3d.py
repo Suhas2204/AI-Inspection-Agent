@@ -46,8 +46,8 @@ import math
 from pathlib import Path
 
 from .paths import SCHEMATIC
-from .position import DUCT_TYPES, RAIL_TYPE, STRUCTURAL
-from .position import frame_of      # one definition of "which frame a part is in"
+from .prep.position import DUCT_TYPES, RAIL_TYPE, STRUCTURAL
+from .prep.position import frame_of  # one definition of "which frame a part is in"
 
 DATA = SCHEMATIC
 

@@ -27,7 +27,7 @@ import re
 import time
 from pathlib import Path
 
-from .checklist import Item, load_checklist
+from .prep.checklist import Item, load_checklist
 from .core.adjudicate import (
     ABSTAIN,
     PART_EDIT_MAX,

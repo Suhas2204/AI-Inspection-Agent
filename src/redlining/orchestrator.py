@@ -64,7 +64,7 @@ status and no new column.
 
 Usage:
     from redlining.core.adjudicate import Adjudicator
-    from redlining.checklist import load_checklist
+    from redlining.prep.checklist import load_checklist
     from redlining.orchestrator import LlamaCppLLM, MockLLM, Orchestrator
     from redlining.report import RunLog
 
@@ -88,7 +88,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .checklist import Item
+from .prep.checklist import Item
 from .core.adjudicate import ABSTAIN, STRIP_TAGS, Adjudicator
 from .core.normalise import (
     DIGIT_WORDS,

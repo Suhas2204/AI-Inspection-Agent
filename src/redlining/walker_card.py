@@ -52,7 +52,7 @@ import re
 import sys
 from pathlib import Path
 
-from .checklist import load_checklist
+from .prep.checklist import load_checklist
 from .paths import DECISIONS
 
 FAULTS = DECISIONS / "faults.csv"

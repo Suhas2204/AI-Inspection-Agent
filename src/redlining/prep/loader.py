@@ -1,0 +1,334 @@
+"""Block 1: turn the raw export into the cleaned core set.
+
+    220  records in schematic.json
+    -42  mechanical filler
+     -5  '- Kombination' assembly wrappers
+    ----
+    173  core  ->  92 devices + 81 terminals in 8 strips  ->  100 checklist items
+
+- Nothing is dropped silently: every removed record gets a reason in
+  data/processed/dropped.csv, so the drop is auditable.
+- WARNING: FILLER_TERMS is a guess from BLOCK_GUIDE, not from the export.
+  Read data/processed/dropped.csv and confirm nothing real was removed.
+
+Run:
+    uv run python -m redlining.loader
+    uv run python -m redlining.loader --verify    # diff against the existing cleaned file
+    uv run python -m redlining.loader --force     # write output even if the gate fails
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import sys
+from collections import Counter
+from pathlib import Path
+
+from ..paths import DROPPED, SCHEMATIC, SCHEMATIC_RAW
+
+RAW = SCHEMATIC_RAW
+OUT = SCHEMATIC
+
+# Gate values. From CONTEXT §6, with the part-number count corrected: the 37 in
+# BLOCK_GUIDE was computed before filler removal and is wrong.
+EXPECT_RAW = 220
+EXPECT_CORE = 173
+EXPECT_DEVICES = 92
+EXPECT_TERMINALS = 81
+EXPECT_STRIPS = 8
+EXPECT_PART_NUMBERS = 31
+
+STRIP_TAGS = ["-X1", "-X2", "-X3", "-X4", "-X5", "-X6", "-X7", "-X8"]
+
+# Mechanical filler. Matched case-insensitively against `type` and `designation`.
+FILLER_TERMS = [
+    "blindabdeck",      # blanking cover
+    "abdeckung",        # cover
+    "blanking",
+    "aderleiste",       # wire ridge (German type name)
+    "wire ridge",       # same part, English type name in this export
+    "distanzstuck", "distanzstück",   # spacer
+    "isolierstuck", "isolierstück",   # insulator
+    "endkappe",         # end cap
+    "trennwand",        # partition
+    "beschriftung",     # labelling strip
+]
+
+WRAPPER_TERM = "kombination"
+WRAPPER_REASON = "assembly wrapper ('- Kombination')"
+MERGED_NOTE = "; location and position merged into the kept record"
+
+
+def norm(s) -> str:
+    """Trim and lowercase a value for matching.
+
+    Args:
+        s: A string or None.
+
+    Returns:
+        Normalised string ("" for None).
+    """
+    return (s or "").strip().lower()
+
+
+def is_filler(rec: dict) -> str | None:
+    """Check whether a record is mechanical filler (covers, spacers, ...).
+
+    Args:
+        rec: Raw component record.
+
+    Returns:
+        Drop reason if a FILLER_TERMS entry is in its type or designation, else None.
+    """
+    haystack = f"{norm(rec.get('type'))} {norm(rec.get('designation'))}"
+    for term in FILLER_TERMS:
+        if term in haystack:
+            return f"mechanical filler ({term})"
+    return None
+
+
+def is_wrapper(rec: dict) -> str | None:
+    """Check whether a record is a '- Kombination' assembly wrapper.
+
+    Args:
+        rec: Raw component record.
+
+    Returns:
+        Drop reason if it is a wrapper, else None.
+    """
+    if WRAPPER_TERM in norm(rec.get("designation")) or \
+       WRAPPER_TERM in norm(rec.get("type")):
+        return WRAPPER_REASON
+    return None
+
+
+def load_raw(path: Path) -> tuple[dict, list[dict]]:
+    """Read the raw schematic export.
+
+    Args:
+        path: Raw JSON export, e.g. data/raw/schematic.json.
+
+    Returns:
+        (metadata, records): the top-level dict ({} if the file is a bare
+        list) and the component records.
+
+    Raises:
+        SystemExit: If the file does not exist.
+    """
+    if not path.exists():
+        sys.exit(f"{path} not found. Put the raw export in data/raw/ first.")
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    records = data["components"] if isinstance(data, dict) else data
+    return (data if isinstance(data, dict) else {}), records
+
+
+def merge_wrapper_locations(core: list[dict],
+                            dropped: list[tuple[dict, str]]) -> list[dict]:
+    """Give a kept record the location and coordinates of its wrapper twin.
+
+    The export splits some devices in two: a '- Kombination' wrapper holding
+    the location but no part number, and the real device holding the part
+    number but no location. Keeping the record with the part number used to
+    throw the location away with the wrapper -- that is how -1Q2 and -1Q3
+    reached the walking order as "no location in file". Merge the halves
+    rather than choosing between them.
+
+    Location alone is not enough: position.py assigns a rail row by matching
+    a device's y against the rail heights, and the kept record's position is
+    all zeros. Without the wrapper's coordinates the device knows its frame
+    and still has no row. Both move together or neither is any use.
+
+    Only an empty location is filled, and only from exactly one candidate:
+    two wrappers for one tag is an ambiguity to report, not to resolve here.
+    The wrapper is still dropped; its reason records that it was merged.
+
+    Args:
+        core: Kept records, modified in place.
+        dropped: (record, reason) pairs; reasons are updated in place.
+
+    Returns:
+        The core records that gained a location.
+    """
+    wrappers: dict[str, list[int]] = {}
+    for i, (rec, reason) in enumerate(dropped):
+        if reason == WRAPPER_REASON and norm(rec.get("location")):
+            wrappers.setdefault(norm(rec.get("designation")), []).append(i)
+
+    merged = []
+    for rec in core:
+        if norm(rec.get("location")):
+            continue
+        found = wrappers.get(norm(rec.get("designation")), [])
+        if len(found) != 1:
+            continue                    # nothing to take, or ambiguous
+        wrapper, reason = dropped[found[0]]
+        rec["location"] = wrapper.get("location", "")
+        rec["parent_location"] = wrapper.get("parent_location", "")
+        if "position" in wrapper:
+            rec["position"] = wrapper["position"]
+        dropped[found[0]] = (wrapper, reason + MERGED_NOTE)
+        merged.append(rec)
+    return merged
+
+
+def clean(records: list[dict]) -> tuple[list[dict], list[tuple[dict, str]]]:
+    """Split records into core components and dropped ones.
+
+    Checked in order: wrapper -> empty part number -> filler.
+
+    Args:
+        records: Raw component records.
+
+    Returns:
+        (core, dropped), where dropped is a list of (record, reason).
+    """
+    core, dropped = [], []
+
+    for rec in records:
+        # Wrapper first. BLOCK_GUIDE: -1Q2 and -1Q3 each appear twice, once as a
+        # wrapper and once as the real device. Keep the one with a part number.
+        reason = is_wrapper(rec)
+        if reason is None and not norm(rec.get("order_reference")):
+            reason = "empty part number"
+        if reason is None:
+            reason = is_filler(rec)
+
+        (dropped.append((rec, reason)) if reason else core.append(rec))
+
+    merge_wrapper_locations(core, dropped)
+    return core, dropped
+
+
+def summarise(core: list[dict]) -> dict:
+    """Count what the cleaned core set contains.
+
+    Args:
+        core: Cleaned component records.
+
+    Returns:
+        Dict of counts: core, devices, unique_device_tags, terminals, strips,
+        part_numbers, device_types, checklist_items.
+    """
+    strips = set(STRIP_TAGS)
+    devices = [r for r in core if r["designation"] not in strips]
+    terminals = [r for r in core if r["designation"] in strips]
+    return {
+        "core": len(core),
+        "devices": len(devices),
+        "unique_device_tags": len({r["designation"] for r in devices}),
+        "terminals": len(terminals),
+        "strips": len({r["designation"] for r in terminals}),
+        "part_numbers": len({r["order_reference"] for r in core}),
+        "device_types": len({r["type"] for r in devices}),
+        "checklist_items": len({r["designation"] for r in devices}) + len(
+            {r["designation"] for r in terminals}),
+    }
+
+
+def write_dropped(dropped: list[tuple[dict, str]], path: Path = DROPPED) -> None:
+    """Write every dropped record and its reason to CSV for auditing.
+
+    Args:
+        dropped: (record, reason) pairs from clean().
+        path: Output CSV.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["reason", "component_id", "designation", "type",
+                    "order_reference", "location"])
+        for rec, reason in dropped:
+            w.writerow([reason, rec.get("component_id", ""),
+                        rec.get("designation", ""), rec.get("type", ""),
+                        rec.get("order_reference", ""), rec.get("location", "")])
+
+
+def check_gate(raw_n: int, core: list[dict], dropped: list) -> list[str]:
+    """Compare the cleaned counts with the expected gate values.
+
+    Args:
+        raw_n: Number of raw records read.
+        core: Cleaned component records.
+        dropped: Dropped records (currently not used in the check).
+
+    Returns:
+        One message per count that is off. Empty list = gate passed.
+    """
+    s = summarise(core)
+    problems = []
+    for name, got, want in [
+        ("raw records", raw_n, EXPECT_RAW),
+        ("core records", s["core"], EXPECT_CORE),
+        ("devices", s["devices"], EXPECT_DEVICES),
+        ("unique device tags", s["unique_device_tags"], EXPECT_DEVICES),
+        ("terminals", s["terminals"], EXPECT_TERMINALS),
+        ("strips", s["strips"], EXPECT_STRIPS),
+        ("part numbers", s["part_numbers"], EXPECT_PART_NUMBERS),
+        ("checklist items", s["checklist_items"], 100),
+    ]:
+        if got != want:
+            problems.append(f"{name}: expected {want}, got {got}")
+    return problems
+
+
+def main() -> None:
+    """CLI: clean the export, write dropped.csv, check the gate, write the output."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--raw", type=Path, default=RAW)
+    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--verify", action="store_true",
+                    help="diff against the existing cleaned file")
+    ap.add_argument("--force", action="store_true",
+                    help="write the output even if the gate fails")
+    args = ap.parse_args()
+
+    meta, records = load_raw(args.raw)
+    core, dropped = clean(records)
+    write_dropped(dropped)
+
+    print(f"{len(records)} raw records")
+    for reason, n in Counter(r for _, r in dropped).most_common():
+        print(f"  -{n:3d}  {reason}")
+    print(f"  ----")
+    s = summarise(core)
+    for k, v in s.items():
+        print(f"  {v:5d}  {k}")
+    print(f"\ndrop log: {DROPPED}  -- read it. Confirm nothing real is in there.")
+
+    problems = check_gate(len(records), core, dropped)
+    if problems:
+        print("\nGATE FAILED:")
+        for p in problems:
+            print(f"  {p}")
+        print("\nFILLER_TERMS at the top of this file is the likely cause. "
+              "Do not adjust the expected numbers to fit the code.")
+        if not args.force:
+            sys.exit(1)
+    else:
+        print("\nGate: all counts as expected.")
+
+    payload = {
+        "project_number": meta.get("project_number", ""),
+        "total_components": len(core),
+        "components": core,
+    }
+    args.out.write_text(json.dumps(payload, indent=1, ensure_ascii=False),
+                        encoding="utf-8")
+    print(f"wrote {args.out}")
+
+    if args.verify and args.out.exists():
+        prior = json.loads(args.out.read_text(encoding="utf-8"))
+        a = {r["component_id"] for r in prior["components"]}
+        b = {r["component_id"] for r in core}
+        if a == b:
+            print("verify: identical to the previous cleaned file.")
+        else:
+            print(f"verify: DIFFERS -- {len(a - b)} only in old, "
+                  f"{len(b - a)} only in new")
+
+
+if __name__ == "__main__":
+    main()

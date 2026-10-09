@@ -1,13 +1,14 @@
 """redlining: voice-guided inspection assistant for one control cabinet.
 
-Pipeline, one module per block:
-    loader       Block 1  raw export -> cleaned component set
-    position     Block 2  coordinates -> spoken locations (walking order)
-    make_bands   Block 3  emit the rows the advisor bands
-    checklist    Block 3  walking order + bands -> ordered checklist
-    session      Block 7  run the inspection loop
-    audio_input  Block 7  microphone + local Whisper input
-    report       Block 8  append-only run log and report
+A run and what it produces, one module per block:
+    session         Block 7  walk the checklist and run the inspection
+    audio_input     Block 7  microphone + local Whisper input
+    streamlit_input Block 7  transcribe a clip the page already recorded
+    orchestrator    Block 7  LLM front end over the same step_item
+    report          Block 8  append-only run log and report
+    score           Block 9  score one run against the planted faults
+    walker_card     Block 9  the card the walker reads while planting
+    model3d                  axis-aligned boxes for the 3D view
 
 core/ sits outside that list: no block of its own, importable from anywhere.
 Every name below is re-exported at its old top-level path as well, so
@@ -16,4 +17,13 @@ redlining.normalise and `python -m redlining.adjudicate` both still resolve.
     core.normalise        Block 4  raw transcript -> canonical string
     core.adjudicate       Block 6  read vs schematic -> one of four verdicts
     core.stats            Block 9  Wilson intervals and exact McNemar
+
+prep/ is what runs before a session, by hand, and never during one:
+    prep.loader           Block 1  raw export -> cleaned component set
+    prep.position         Block 2  coordinates -> spoken locations
+    prep.make_bands       Block 3  emit the rows the advisor bands
+    prep.checklist        Block 3  walking order + bands -> ordered checklist
+    prep.select_faults    Block 9  the one-shot, seeded fault draw
+
+paths.py stays at the top: one anchor, shared by every layer.
 """

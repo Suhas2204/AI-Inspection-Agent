@@ -34,7 +34,7 @@ import streamlit as st
 
 from redlining.core.adjudicate import ABSTAIN, Adjudicator
 from redlining.audio_input import LocalTranscriber
-from redlining.checklist import load_checklist
+from redlining.prep.checklist import load_checklist
 from redlining.paths import DECISIONS, PROCESSED, ROOT, RUNS, SCHEMATIC
 from redlining.report import FLAGGED, Annotation, RunLog
 from redlining.session import MAX_REASKS, TAG_MODE_WARNING, step_item
