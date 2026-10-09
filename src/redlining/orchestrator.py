@@ -96,7 +96,7 @@ from .core.normalise import (
     compact,
     strip_lead_in,
 )
-from .core.types import Read
+from .core.reads import Read
 from .report import RunLog
 from .session import MAX_REASKS, step_item
 

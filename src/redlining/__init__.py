@@ -12,7 +12,7 @@ Pipeline, one module per block:
 core/ sits outside that list: no block of its own, importable from anywhere.
 Every name below is re-exported at its old top-level path as well, so
 redlining.normalise and `python -m redlining.adjudicate` both still resolve.
-    core.types            Read and Heard, shared by every input source
+    core.reads            Read and Heard, shared by every input source
     core.normalise        Block 4  raw transcript -> canonical string
     core.adjudicate       Block 6  read vs schematic -> one of four verdicts
     core.stats            Block 9  Wilson intervals and exact McNemar

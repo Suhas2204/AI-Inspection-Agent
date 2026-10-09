@@ -91,13 +91,14 @@ def terminal_functions(type_str: str) -> Counter:
 try:
     from .normalise import compact        # core/, beside this file
     from ..paths import SCHEMATIC         # one level up, outside core/
-except ImportError:                       # no package context
-    # This branch no longer reaches a running state from inside core/:
-    # paths.py is the directory above, and core/types.py shadows the standard
-    # library's `types` for anything that puts core/ on sys.path, which a
-    # direct `python src/redlining/core/adjudicate.py` does. Use the module
-    # form -- `python -m redlining.adjudicate` -- which is what the shim at
-    # the old path delegates to.
+except ImportError:                       # running the file directly
+    import sys
+    # normalise.py is beside this file, so the script directory covers it.
+    # paths.py is the directory above, which a direct run does not put on
+    # the path -- appended, not inserted, so that `normalise` still resolves
+    # to the one here and not to the re-export shim one level up.
+    # `python -m redlining.adjudicate` needs neither line.
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
     from normalise import compact
     from paths import SCHEMATIC
 

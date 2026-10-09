@@ -22,7 +22,7 @@ import sys
 import threading
 from pathlib import Path
 
-from .core.types import Read
+from .core.reads import Read
 
 SAMPLE_RATE = 16_000          # what Whisper wants; resampling is one more thing
 CHANNELS = 1

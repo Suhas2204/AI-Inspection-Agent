@@ -43,10 +43,10 @@ from .core.normalise import (
     runaway,
     strip_leading_filler,
 )
-# Read and Heard live in core.types so that audio_input.py and
+# Read and Heard live in core.reads so that audio_input.py and
 # streamlit_input.py can build one without importing this module.
 # Re-exported here: session.Read is the name every caller already uses.
-from .core.types import Heard, Read
+from .core.reads import Heard, Read
 from .audio_input import VAD_MAX_S, VAD_SILENCE_S
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog

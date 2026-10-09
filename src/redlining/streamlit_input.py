@@ -26,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .audio_input import LocalTranscriber
-from .core.types import Read
+from .core.reads import Read
 
 MODEL_SIZE = "small"
 
