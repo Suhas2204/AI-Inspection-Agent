@@ -36,8 +36,8 @@ from redlining.core.adjudicate import ABSTAIN, Adjudicator
 from redlining.speech.audio_input import LocalTranscriber
 from redlining.prep.checklist import load_checklist
 from redlining.paths import DECISIONS, PROCESSED, ROOT, RUNS, SCHEMATIC
-from redlining.report import FLAGGED, Annotation, RunLog
-from redlining.session import MAX_REASKS, TAG_MODE_WARNING, step_item
+from redlining.inspection.report import FLAGGED, Annotation, RunLog
+from redlining.inspection.session import MAX_REASKS, TAG_MODE_WARNING, step_item
 from redlining.speech.streamlit_input import MODEL_SIZE, StreamlitInput
 
 MODE = "tag"                      # what the runs use (CONTEXT §7)

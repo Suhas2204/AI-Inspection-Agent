@@ -1,12 +1,14 @@
 """redlining: voice-guided inspection assistant for one control cabinet.
 
-A run and what it produces, one module per block:
-    session         Block 7  walk the checklist and run the inspection
-    orchestrator    Block 7  LLM front end over the same step_item
-    report          Block 8  append-only run log and report
+What a run produces, one module per block:
     score           Block 9  score one run against the planted faults
     walker_card     Block 9  the card the walker reads while planting
     model3d                  axis-aligned boxes for the 3D view
+
+inspection/ is one run, from the first prompt to the written report:
+    inspection.session       Block 7  walk the checklist, run the inspection
+    inspection.orchestrator  Block 7  an LLM front end over step_item
+    inspection.report        Block 8  append-only run log and report
 
 core/ sits outside that list: no block of its own, importable from anywhere.
 Every name below is re-exported at its old top-level path as well, so
