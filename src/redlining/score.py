@@ -43,7 +43,7 @@ import csv
 import json
 from pathlib import Path
 
-from .stats import fmt_ci, fmt_rate, wilson_ci
+from .core.stats import fmt_ci, fmt_rate, wilson_ci
 
 DETECTABLE_YES = "yes"
 BANDS = (1, 2, 3)

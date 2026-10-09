@@ -32,7 +32,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from redlining.adjudicate import ABSTAIN, Adjudicator
+from redlining.core.adjudicate import ABSTAIN, Adjudicator
 from redlining.audio_input import LocalTranscriber
 from redlining.checklist import load_checklist
 from redlining.paths import DECISIONS, PROCESSED, ROOT, RUNS, SCHEMATIC

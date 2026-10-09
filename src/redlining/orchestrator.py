@@ -63,7 +63,7 @@ absent from it, which is already how score.py reads "not walked" -- no new
 status and no new column.
 
 Usage:
-    from redlining.adjudicate import Adjudicator
+    from redlining.core.adjudicate import Adjudicator
     from redlining.checklist import load_checklist
     from redlining.orchestrator import LlamaCppLLM, MockLLM, Orchestrator
     from redlining.report import RunLog
@@ -88,16 +88,17 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .adjudicate import ABSTAIN, STRIP_TAGS, Adjudicator
 from .checklist import Item
-from .normalise import (
+from .core.adjudicate import ABSTAIN, STRIP_TAGS, Adjudicator
+from .core.normalise import (
     DIGIT_WORDS,
     TEEN_TENS_WORDS,
     compact,
     strip_lead_in,
 )
+from .core.types import Read
 from .report import RunLog
-from .session import MAX_REASKS, Read, step_item
+from .session import MAX_REASKS, step_item
 
 # ---------------------------------------------------------------------------
 # Redaction

@@ -27,19 +27,15 @@ import re
 import time
 from pathlib import Path
 
-from .adjudicate import (
+from .checklist import Item, load_checklist
+from .core.adjudicate import (
     ABSTAIN,
     PART_EDIT_MAX,
     TAG_EDIT_MAX,
     Adjudicator,
     Verdict,
 )
-from .checklist import Item, load_checklist
-# Read and Heard live in core.types so that audio_input.py and
-# streamlit_input.py can build one without importing this module.
-# Re-exported here: session.Read is the name every caller already uses.
-from .core.types import Heard, Read
-from .normalise import (
+from .core.normalise import (
     NOISE_WORDS,
     normalise_part,
     normalise_rating,
@@ -47,6 +43,10 @@ from .normalise import (
     runaway,
     strip_leading_filler,
 )
+# Read and Heard live in core.types so that audio_input.py and
+# streamlit_input.py can build one without importing this module.
+# Re-exported here: session.Read is the name every caller already uses.
+from .core.types import Heard, Read
 from .audio_input import VAD_MAX_S, VAD_SILENCE_S
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
