@@ -1,0 +1,62 @@
+flowchart LR
+  subgraph prep[prep/]
+    prep_checklist[checklist]
+    prep_loader[loader]
+    prep_make_bands[make_bands]
+    prep_position[position]
+    prep_select_faults[select_faults]
+  end
+  subgraph speech[speech/]
+    speech_audio_input[audio_input]
+    speech_streamlit_input[streamlit_input]
+  end
+  subgraph inspection[inspection/]
+    inspection_orchestrator[orchestrator]
+    inspection_report[report]
+    inspection_session[session]
+  end
+  subgraph evaluation[evaluation/]
+    evaluation_score[score]
+    evaluation_walker_card[walker_card]
+  end
+  subgraph view[view/]
+    view_model3d[model3d]
+  end
+  subgraph core[core/]
+    core_adjudicate[adjudicate]
+    core_normalise[normalise]
+    core_reads[reads]
+    core_stats[stats]
+  end
+  paths[[paths]]
+  core_adjudicate --> core_normalise
+  core_adjudicate --> paths
+  evaluation_score --> core_stats
+  evaluation_walker_card --> paths
+  evaluation_walker_card --> prep_checklist
+  inspection_orchestrator --> core_adjudicate
+  inspection_orchestrator --> core_normalise
+  inspection_orchestrator --> core_reads
+  inspection_orchestrator --> inspection_report
+  inspection_orchestrator --> inspection_session
+  inspection_orchestrator --> prep_checklist
+  inspection_report --> paths
+  inspection_session --> core_adjudicate
+  inspection_session --> core_normalise
+  inspection_session --> core_reads
+  inspection_session -.-> inspection_orchestrator
+  inspection_session --> inspection_report
+  inspection_session --> paths
+  inspection_session --> prep_checklist
+  inspection_session --> speech_audio_input
+  prep_checklist --> paths
+  prep_loader --> paths
+  prep_make_bands --> paths
+  prep_position --> paths
+  prep_select_faults --> evaluation_score
+  prep_select_faults --> paths
+  speech_audio_input --> core_reads
+  speech_streamlit_input --> core_reads
+  speech_streamlit_input --> speech_audio_input
+  view_model3d --> paths
+  view_model3d --> prep_position

@@ -8,6 +8,12 @@ lines were wrong. See §12.
 the project without re-explanation. Sections are labelled by epistemic status.
 Treat `FACT` as given, `DECISION` as changeable with reason, `ASSUMPTION` as
 unverified, `OPEN` as genuinely undecided.
+**Layout note, 9 Oct 2026:** the modules this file names moved out of a flat
+`src/redlining/` into six packages -- `prep/`, `speech/`, `inspection/`,
+`evaluation/`, `view/`, `core/` -- with `paths.py` left at the top. Every old
+import path and every `python -m redlining.<name>` command still works: each
+moved module left a one-line re-export at its old path. Where a path below is
+the flat one, it still resolves; `docs/architecture/README.md` has the map.
 
 ---
 
@@ -319,8 +325,8 @@ on this list, and nothing on this list is skipped because it came out badly.
 | # | Metric | Question it answers | Input | Computed in | State |
 |---|---|---|---|---|---|
 | 1 | **Redline precision** | Of flags raised, how many are genuine schematic errors worth sending upstream? | `runs/*/report.md` + adjudication by the author against the cabinet | `experiments/block09_eval/redlines.py` | not started |
-| 2 | **Detection rate @ 10% abstain** | Of planted faults, how many are flagged when the system may skip 10% of items? | `runs/*/attempts.csv` + `faults.csv` | `src/redlining/score.py` | not started |
-| 3 | **Risk–coverage curve** | How much does detection improve as the system is allowed to abstain more? | same as 2 | `src/redlining/score.py` | not started |
+| 2 | **Detection rate @ 10% abstain** | Of planted faults, how many are flagged when the system may skip 10% of items? | `runs/*/attempts.csv` + `faults.csv` | `src/redlining/evaluation/score.py` | not started |
+| 3 | **Risk–coverage curve** | How much does detection improve as the system is allowed to abstain more? | same as 2 | `src/redlining/evaluation/score.py` | not started |
 | 4 | **Confusability map** | Which device tags are close enough that a one-character misread yields a different *legal* tag? | `data/processed/schematic.cleaned.json` only | `experiments/block09_eval/confusability.py` | script written; output in `data/processed/confusability.csv` |
 | 5 | **ASR character accuracy** | Does Whisper hear the tag, and which character does it lose? | `data/processed/transcripts.csv`, `expected` column filled by hand | `experiments/block05_asr/score.py` | blocked: `expected` empty |
 | 6 | **Time per cabinet** | Does a run fit inside the working shift? | `RunLog.duration_s` | already recorded | measured, not reported |

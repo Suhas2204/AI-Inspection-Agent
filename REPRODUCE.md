@@ -22,7 +22,9 @@ has to be passed to reach it.
 
 **Two of the Chapter 5 numbers are not what `score.py` prints.** They are not
 wrong, but they are computed under different definitions from the ones fixed in
-`src/redlining/score.py`, and a reader who runs the command in this file will
+`src/redlining/evaluation/score.py` (moved there on 9 Oct 2026; the
+command below is unchanged, `redlining.score` still resolves), and a reader
+who runs the command in this file will
 see different figures on screen. This has to be settled before submission —
 either the chapter adopts the scorer's definitions, or the chapter states its
 own and says why.

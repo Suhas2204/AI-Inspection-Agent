@@ -1,0 +1,82 @@
+classDiagram
+  class redlining {
+  }
+  style redlining fill:#77AADD
+  class core {
+  }
+  style core fill:#99DDFF
+  class adjudicate {
+  }
+  style adjudicate fill:#99DDFF
+  class normalise {
+  }
+  style normalise fill:#99DDFF
+  class reads {
+  }
+  style reads fill:#99DDFF
+  class stats {
+  }
+  style stats fill:#99DDFF
+  class evaluation {
+  }
+  style evaluation fill:#44BB99
+  class score {
+  }
+  style score fill:#44BB99
+  class walker_card {
+  }
+  style walker_card fill:#44BB99
+  class inspection {
+  }
+  style inspection fill:#BBCC33
+  class orchestrator {
+  }
+  style orchestrator fill:#BBCC33
+  class report {
+  }
+  style report fill:#BBCC33
+  class session {
+  }
+  style session fill:#BBCC33
+  class paths {
+  }
+  style paths fill:#77AADD
+  class prep {
+  }
+  style prep fill:#AAAA00
+  class checklist {
+  }
+  style checklist fill:#AAAA00
+  class loader {
+  }
+  style loader fill:#AAAA00
+  class make_bands {
+  }
+  style make_bands fill:#AAAA00
+  class position {
+  }
+  style position fill:#AAAA00
+  class select_faults {
+  }
+  style select_faults fill:#AAAA00
+  class speech {
+  }
+  style speech fill:#EEDD88
+  class audio_input {
+  }
+  style audio_input fill:#EEDD88
+  class streamlit_input {
+  }
+  style streamlit_input fill:#EEDD88
+  class view {
+  }
+  style view fill:#EE8866
+  class model3d {
+  }
+  style model3d fill:#EE8866
+  adjudicate --> normalise
+  orchestrator --> report
+  orchestrator --> session
+  session --> orchestrator
+  session --> report
+  streamlit_input --> audio_input

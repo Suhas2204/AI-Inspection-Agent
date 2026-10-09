@@ -717,3 +717,82 @@ OPEN:    re-measure both models at v2 over the 24, and report whether the
          elsewhere. Not run yet: the server is shared and this entry is
          being written before spending on it. Until it is run, the only
          claim supported here is that v1 declined word-form readings.
+
+### Layout — src/redlining split into six packages — 9 Oct
+
+Found:  19 modules flat in src/redlining/, and three import cycles between
+        them. Read lived in session.py, so audio_input.py and
+        streamlit_input.py both reached into session.py to build one while
+        session.py imported audio_input.py for the endpointing constants.
+        Both halves survived only because the two input sources deferred
+        their import into the method body, four times between them. A flat
+        list also says nothing about what may import what, which is the
+        question that matters when adding a module.
+Changed: paths.py stays at the top. Everything else moved into six
+        packages, in the order the work happens: prep/ (Blocks 1-3 and the
+        fault draw, run by hand before a walk), speech/ (the two input
+        sources), inspection/ (session, orchestrator, report), evaluation/
+        (score, walker_card), view/ (model3d), and core/ (reads,
+        normalise, adjudicate, stats -- no block of its own, importable
+        from anywhere).
+Changed: Read and Heard moved to core.reads, which removed two of the three
+        cycles outright. The input sources import them directly now and
+        their four deferred imports became one plain import each.
+Kept:    the third cycle, orchestrator <-> session, inside inspection/.
+        orchestrator needs MAX_REASKS and step_item at module level;
+        session needs CLARIFY and the LLM classes only inside agent_loop
+        and run_agent, so those stay deferred. Counting body-level imports
+        alone there is no cycle, so no import order can fail. Breaking it
+        properly means moving step_item to a third module, which changes
+        the loop rather than the layout -- not done here, and both modules
+        drive the same step_item on purpose: an LLM-driven run writes
+        byte-for-byte the log a walked run writes because it is the same
+        function.
+Kept:    every old import path. Each moved module left a shim at its old
+        path that re-exports the implementation -- private names included,
+        because tests import _pre, _is_exit, _EnterWatcher, _wire_tools,
+        _wire_messages, _arguments_for, _is_reading and _emit_row -- and
+        delegates `python -m redlining.<name>` to the new module with
+        runpy. 16 shims, 382 names, every one checked for object identity
+        rather than equality: old.X is new.X. No test, no experiment script
+        and nothing in app.py had to change its imports, which is the
+        evidence that the shims work, so they were left on the old paths
+        deliberately.
+Gate:    paths. Every path constant was captured before the move and
+        diffed after -- data/raw, data/processed, data/decisions, runs/,
+        and the copies in loader.RAW/OUT, position.DATA and
+        make_bands.SRC/OUT. Identical, byte for byte. paths.py was not
+        moved for exactly this reason: ROOT is parents[2], and one level
+        deeper makes ROOT src/, every data path resolve to a file that is
+        not there, and nothing raise.
+Found:  core/types.py, the first name for core/reads.py, shadowed the
+        standard library's `types`. enum and weakref import from it during
+        start-up, so any sys.path entry pointing at core/ -- which a direct
+        `python src/redlining/core/adjudicate.py` creates -- made the
+        interpreter import ours and fail inside `import json`, before a line
+        of project code ran. Renamed to core/reads.py, and speech/ is named
+        speech/ and not io/ for the same reason.
+Changed: select_faults.py had no __main__ guard, so reading the candidates,
+        the seeded draw, the collision check and the CSV to stdout all
+        happened at import. Its body is in main() now. The command is
+        byte-for-byte what it was -- 2010 bytes, same md5, with the seed
+        argument, without it, and run at either path -- and importing the
+        module writes nothing.
+Gate:    all fourteen `python -m` entry points run, at both the old path
+        and the new one, score --latex included. The agent loop was driven
+        on piped input ("where next", "minus 1 Q1", "done") with --agent
+        --text and no --llm, which exercises the deferred orchestrator
+        import: MockLLM dispatched next_location and submit_reading over 3
+        turns and wrote a report. make_bands still exits 1 on its own
+        guard. No tracked file under data/ or runs/ changed. 460 passed, 2
+        skipped, unchanged at every one of the eight commits.
+Note:    docs/architecture/ holds the diagrams, generated and not drawn:
+        packages.mmd from docs/architecture/import_graph.py, classes.mmd
+        from pyreverse (pylint is a dev dependency now). pyreverse resolves
+        single-dot relative imports and not double-dot ones, so its own
+        package diagram finds 6 of the 31 edges; both are committed, and
+        docs/architecture/README.md says which is which and why.
+OPEN:    the shims are a migration aid, not a design. Nothing is forced to
+        use them, and the right time to delete them is after the thesis is
+        submitted and the quoted paths are frozen -- not before, because
+        README, REPRODUCE and CONTEXT quote module paths a reader may type.
