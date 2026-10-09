@@ -10,4 +10,7 @@ Pipeline, one module per block:
     session      Block 7  run the inspection loop
     audio_input  Block 7  microphone + local Whisper input
     report       Block 8  append-only run log and report
+
+core/ sits outside that list: no I/O, no block, imported by anything.
+    core.types            Read and Heard, shared by every input source
 """

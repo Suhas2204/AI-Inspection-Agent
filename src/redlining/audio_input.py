@@ -22,6 +22,8 @@ import sys
 import threading
 from pathlib import Path
 
+from .core.types import Read
+
 SAMPLE_RATE = 16_000          # what Whisper wants; resampling is one more thing
 CHANNELS = 1
 
@@ -602,8 +604,6 @@ class LiveInput:
             Read with tag_raw (tag mode) or part_raw + rating_raw (part mode),
             plus confidence and audio_path.
         """
-        from .session import Read
-
         if attempt == 1:
             self._say(prompt)                     # location only
         else:
@@ -637,8 +637,6 @@ class LiveInput:
         Returns:
             Read with counts_raw, confidence and audio_path.
         """
-        from .session import Read
-
         if attempt == 1:
             self._say(prompt)
         else:

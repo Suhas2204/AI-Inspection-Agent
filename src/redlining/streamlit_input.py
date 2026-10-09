@@ -26,6 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .audio_input import LocalTranscriber
+from .core.types import Read
 
 MODEL_SIZE = "small"
 
@@ -114,8 +115,6 @@ class StreamlitInput:
             Read with tag_raw (tag mode) or part_raw + rating_raw (part mode),
             plus confidence and audio_path.
         """
-        from .session import Read
-
         text, path, conf = self._take("pending_audio_path")
 
         if self.mode == "tag":
@@ -141,7 +140,5 @@ class StreamlitInput:
         Returns:
             Read with counts_raw, confidence and audio_path.
         """
-        from .session import Read
-
         text, path, conf = self._take("pending_audio_path")
         return Read(counts_raw=text, confidence=conf, audio_path=path)
