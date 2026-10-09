@@ -2,8 +2,6 @@
 
 A run and what it produces, one module per block:
     session         Block 7  walk the checklist and run the inspection
-    audio_input     Block 7  microphone + local Whisper input
-    streamlit_input Block 7  transcribe a clip the page already recorded
     orchestrator    Block 7  LLM front end over the same step_item
     report          Block 8  append-only run log and report
     score           Block 9  score one run against the planted faults
@@ -17,6 +15,10 @@ redlining.normalise and `python -m redlining.adjudicate` both still resolve.
     core.normalise        Block 4  raw transcript -> canonical string
     core.adjudicate       Block 6  read vs schematic -> one of four verdicts
     core.stats            Block 9  Wilson intervals and exact McNemar
+
+speech/ is the input sources, one interface, one output -- a Read:
+    speech.audio_input      Block 7  microphone + local Whisper
+    speech.streamlit_input  Block 7  a clip the page already recorded
 
 prep/ is what runs before a session, by hand, and never during one:
     prep.loader           Block 1  raw export -> cleaned component set

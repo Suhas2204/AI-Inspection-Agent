@@ -47,7 +47,7 @@ from .core.normalise import (
 # streamlit_input.py can build one without importing this module.
 # Re-exported here: session.Read is the name every caller already uses.
 from .core.reads import Heard, Read
-from .audio_input import VAD_MAX_S, VAD_SILENCE_S
+from .speech.audio_input import VAD_MAX_S, VAD_SILENCE_S
 from .paths import RUNS, SCHEMATIC
 from .report import Annotation, Attempt, RunLog
 
@@ -675,7 +675,7 @@ def run_agent(args, adj: Adjudicator, items: list[Item], log: RunLog) -> None:
         items: Checklist items in walking order.
         log: RunLog receiving every attempt, in the usual format.
     """
-    from .audio_input import init_tts, speak as speak_aloud
+    from .speech.audio_input import init_tts, speak as speak_aloud
     from .orchestrator import LlamaCppLLM, MockLLM, Orchestrator
 
     llm = LlamaCppLLM() if args.llm else MockLLM()
@@ -735,7 +735,7 @@ def _voice_listener(audio_dir: Path, args):
     Returns:
         The callable.
     """
-    from .audio_input import LocalTranscriber, Recorder
+    from .speech.audio_input import LocalTranscriber, Recorder
 
     audio_dir = Path(audio_dir)
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -835,7 +835,7 @@ def main() -> None:
     if args.scripted:
         source = ScriptedInput(adj)
     elif args.live:
-        from .audio_input import LiveInput
+        from .speech.audio_input import LiveInput
         source = LiveInput(log.dir / "audio", model_size=args.model,
                            speak=args.speak, mode=args.mode)
     else:
