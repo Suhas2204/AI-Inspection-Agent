@@ -20,7 +20,7 @@ import csv, random, sys
 from collections import Counter
 
 from ..paths import DECISIONS
-from ..score import positions      # one definition of "where a fault sits"
+from ..evaluation.score import positions      # one definition of "where a fault sits"
 
 CANDIDATES = DECISIONS / "fault_candidates.csv"
 

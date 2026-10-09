@@ -305,7 +305,7 @@ try:                                            # noqa: E402 -- section-local
 except ModuleNotFoundError:
     HAVE_PLOTLY = False
 
-from redlining.model3d import (                 # noqa: E402 -- kept with its use
+from redlining.view.model3d import (                 # noqa: E402 -- kept with its use
     FRAME_NOTE,
     build_boxes,
     build_figure,
