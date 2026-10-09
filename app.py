@@ -32,13 +32,13 @@ from pathlib import Path
 
 import streamlit as st
 
-from redlining.adjudicate import ABSTAIN, Adjudicator
-from redlining.audio_input import LocalTranscriber
-from redlining.checklist import load_checklist
+from redlining.core.adjudicate import ABSTAIN, Adjudicator
+from redlining.speech.audio_input import LocalTranscriber
+from redlining.prep.checklist import load_checklist
 from redlining.paths import DECISIONS, PROCESSED, ROOT, RUNS, SCHEMATIC
-from redlining.report import FLAGGED, Annotation, RunLog
-from redlining.session import MAX_REASKS, TAG_MODE_WARNING, step_item
-from redlining.streamlit_input import MODEL_SIZE, StreamlitInput
+from redlining.inspection.report import FLAGGED, Annotation, RunLog
+from redlining.inspection.session import MAX_REASKS, TAG_MODE_WARNING, step_item
+from redlining.speech.streamlit_input import MODEL_SIZE, StreamlitInput
 
 MODE = "tag"                      # what the runs use (CONTEXT §7)
 ABSTAIN_CEILING = 0.10            # CONTEXT §8 working ceiling
@@ -305,7 +305,7 @@ try:                                            # noqa: E402 -- section-local
 except ModuleNotFoundError:
     HAVE_PLOTLY = False
 
-from redlining.model3d import (                 # noqa: E402 -- kept with its use
+from redlining.view.model3d import (                 # noqa: E402 -- kept with its use
     FRAME_NOTE,
     build_boxes,
     build_figure,

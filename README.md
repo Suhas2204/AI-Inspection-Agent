@@ -161,7 +161,7 @@ uv run python -m redlining.score runs/20260927-130613 --json    # machine-readab
 uv run python -m redlining.score runs/20260927-130613 --latex   # thesis table
 ```
 
-The definitions — planted, caught, missed, not walked, false flag, known miss — are fixed in the module docstring of `src/redlining/score.py` so the thesis and the code cannot disagree about them. A label swap is one fault at two positions, caught from either end.
+The definitions — planted, caught, missed, not walked, false flag, known miss — are fixed in the module docstring of `src/redlining/evaluation/score.py` so the thesis and the code cannot disagree about them. A label swap is one fault at two positions, caught from either end.
 
 **The risk–coverage sweep** — metric 3. Re-judges the saved transcripts at several edit-distance thresholds and re-ask budgets and reports coverage against risk.
 
@@ -193,8 +193,8 @@ Defined before measurement, in priority order (docs/CONTEXT.md §12). "Computed 
 
 | # | Metric | Question it answers | Computed in | State |
 |---|---|---|---|---|
-| **M1** | Redline precision | Of flags raised, how many are genuine schematic errors worth sending upstream? | `src/redlining/score.py` | **Provisional.** The script counts a flag at an unplanted position as false; only replaying the audio settles whether the walker misread a correct label. The dedicated adjudication script CONTEXT names (`block09_eval/redlines.py`) is not written. |
-| **M2** | Detection rate | Of planted faults, how many are flagged? | `src/redlining/score.py` | Computed |
+| **M1** | Redline precision | Of flags raised, how many are genuine schematic errors worth sending upstream? | `src/redlining/evaluation/score.py` | **Provisional.** The script counts a flag at an unplanted position as false; only replaying the audio settles whether the walker misread a correct label. The dedicated adjudication script CONTEXT names (`block09_eval/redlines.py`) is not written. |
+| **M2** | Detection rate | Of planted faults, how many are flagged? | `src/redlining/evaluation/score.py` | Computed |
 | **M3** | Risk–coverage curve | How much does error fall as the system is allowed to abstain more? | `experiments/block09_eval/risk_coverage.py` | Computed |
 | **M4** | Confusability map | Which device tags are close enough that a one-character misread yields a different *legal* tag? | `experiments/block09_eval/confusability.py` | Computed |
 | **M5** | ASR character accuracy | Does the recogniser hear the tag, and which character does it lose? | `experiments/block05_asr/score.py` | Computed |
@@ -231,9 +231,16 @@ Research prototype, submitted with the thesis.
 
 | Path | Contents |
 |---|---|
-| `src/redlining/` | The pipeline, one module per block |
+| `src/redlining/paths.py` | Every file location, anchored at the repository root |
+| `src/redlining/prep/` | Blocks 1–3 and the fault draw: what runs before a walk |
+| `src/redlining/speech/` | The two input sources: microphone, and a clip the page recorded |
+| `src/redlining/inspection/` | One run: the loop, the LLM front end, the log |
+| `src/redlining/evaluation/` | Block 9: scoring a run, and the walker's card |
+| `src/redlining/view/` | The 3D picture of the cabinet |
+| `src/redlining/core/` | Shared and import-free: reads, normaliser, adjudicator, statistics |
 | `app.py` | Streamlit front end for the session and the 3D viewer |
-| `tests/` | pytest suite, 98 tests |
+| `tests/` | pytest suite, 460 tests |
+| `docs/architecture/` | Generated package and class diagrams, and what they show |
 | `experiments/block05_asr/` | `transcribe.py` (two engines), `score.py` (M5, character error rate) |
 | `experiments/block09_eval/` | `confusability.py` (M4), `risk_coverage.py` (M3) |
 | `data/raw/` | Inputs as received: EPLAN export, recording |
@@ -242,6 +249,14 @@ Research prototype, submitted with the thesis.
 | `docs/` | Specification, decision log, block guide and map |
 | `runs/` | Run outputs; ignored except the evaluated run's data files |
 | `walker_card.txt` | What the walker was told to speak at each position, faults included |
+
+The modules moved into those packages on 9 October 2026. Every old import path
+still works: `redlining.score`, `redlining.session`, `redlining.normalise` and
+the thirteen others are one-line re-exports of their new homes, and every
+`python -m redlining.<name>` command in this file runs unchanged. The layers,
+and the one deliberate import cycle, are in
+[docs/architecture/README.md](docs/architecture/README.md); the reasoning is the
+9 Oct entry in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 See [data/README.md](data/README.md) for what each data file is, where it came from, and its GDPR status.
 

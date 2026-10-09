@@ -1,0 +1,234 @@
+classDiagram
+  class Adjudicator {
+    devices
+    legal_parts
+    part_edit_max : int
+    tag_edit_max : int
+    terminals
+    expected_counts(tag: str) Counter
+    from_export(path: str | Path, part_edit_max: int, tag_edit_max: int) 'Adjudicator'
+    judge_device(tag: str, part: str | None, rating: str | None, part_well_formed: bool, rating_well_formed: bool) Verdict
+    judge_strip(tag: str, counts: dict) Verdict
+    judge_tag(tag: str, read_tag: str | None, well_formed: bool) Verdict
+  }
+  style Adjudicator fill:#99DDFF
+  class Annotation {
+    at : str
+    item : str
+    kind : str
+    text : str
+  }
+  style Annotation fill:#BBCC33
+  class Attempt {
+    at : str
+    attempt_no : int
+    audio_path : str | None
+    band : int
+    confidence : float | None
+    expected : dict
+    item : str
+    kind : str
+    normalised : str
+    outcome : str
+    raw_transcript : str
+    reason : str
+    spoken_prompt : str
+    well_formed : bool
+  }
+  style Attempt fill:#BBCC33
+  class Endpointer {
+    elapsed_s : float
+    frame_s : float
+    max_s : float
+    onset_s : float
+    silence_s : float
+    started : bool
+    threshold : float
+    feed(level: float) str
+  }
+  style Endpointer fill:#EEDD88
+  class Heard {
+    audio_path : str | None
+    confidence : float | None
+    text : str
+    of(value) 'Heard'
+  }
+  style Heard fill:#99DDFF
+  class Item {
+    band : int
+    detail : str
+    frame : str
+    kind : str
+    position : int
+    row : int
+    spoken : str
+    tag : str
+    walk_key
+  }
+  style Item fill:#AAAA00
+  class KeyboardInput {
+    mode : str
+    device(prompt: str, attempt: int) Read
+    strip(prompt: str, attempt: int) Read
+  }
+  style KeyboardInput fill:#BBCC33
+  class LLM {
+    decide(messages: list[dict], tools: list[dict]) ToolCall | Reply
+  }
+  style LLM fill:#BBCC33
+  class LiveInput {
+    asr
+    audio_dir : Path
+    mode : str
+    recorder
+    speak : bool
+    device(prompt: str, attempt: int)
+    strip(prompt: str, attempt: int)
+  }
+  style LiveInput fill:#EEDD88
+  class LlamaCppLLM {
+    calls : list[ToolCall | Reply]
+    failures : list[dict]
+    latencies_s : list[float]
+    model : str
+    temperature : float
+    timeout_s : float
+    url : str
+    decide(messages: list[dict], tools: list[dict]) ToolCall | Reply
+  }
+  style LlamaCppLLM fill:#BBCC33
+  class LocalTranscriber {
+    language : str
+    model : WhisperModel
+    transcribe(path: Path) tuple[str, float | None]
+  }
+  style LocalTranscriber fill:#EEDD88
+  class MockLLM {
+    calls : list[ToolCall | Reply]
+    decide(messages: list[dict], tools: list[dict]) ToolCall | Reply
+  }
+  style MockLLM fill:#BBCC33
+  class Normalised {
+    kind : str
+    raw : str
+    reason : str
+    stripped : list[str]
+    tokens : list[str]
+    value : str
+    well_formed : bool
+  }
+  style Normalised fill:#99DDFF
+  class Orchestrator {
+    adj
+    current : Item | None
+    items : list
+    llm
+    log
+    max_reasks : int
+    messages : list[dict]
+    mode : str
+    orchestrator_messages : list[dict]
+    secrets : frozenset
+    call(name: str, arguments: dict | None) dict
+    explain_location() dict
+    finish() dict
+    hear(utterance: str, audio_path: str | None, confidence: float | None) None
+    next_location() dict
+    progress() dict
+    repeat() dict
+    say(utterance: str, audio_path: str | None, confidence: float | None) dict
+    skip(item: int | None) dict
+    submit_reading(text: str | None) dict
+  }
+  style Orchestrator fill:#BBCC33
+  class Read {
+    audio_path : str | None
+    confidence : float | None
+    counts_raw : str
+    part_raw : str
+    rating_raw : str
+    raw : str
+    tag_raw : str
+  }
+  style Read fill:#99DDFF
+  class Recorder {
+    sample_rate : int
+    record_to(path: Path) Path
+    record_until_silence(path: Path, silence_s: float, max_s: float, threshold: float) tuple[Path, str]
+  }
+  style Recorder fill:#EEDD88
+  class Reply {
+    text : str
+  }
+  style Reply fill:#BBCC33
+  class RunLog {
+    annotations_path
+    attempts_path
+    dir
+    duration_s : float | None
+    final_attempts : list[Attempt]
+    flags : list[Attempt]
+    run_id
+    started_at
+    annotate(annotation: Annotation) None
+    annotations_for(item: str) list[Annotation]
+    record(attempt: Attempt) None
+    write_report(expected_items: int, duration_s: float | None) Path
+  }
+  style RunLog fill:#BBCC33
+  class ScriptedInput {
+    adj
+    device(prompt: str, attempt: int) Read
+    strip(prompt: str, attempt: int) Read
+  }
+  style ScriptedInput fill:#BBCC33
+  class Speaker {
+    failures : list[str]
+    spoken : int
+    say(text: str) bool
+  }
+  style Speaker fill:#EEDD88
+  class StreamlitInput {
+    asr : LocalTranscriber
+    mode : str
+    model_size : str
+    pending_audio_path : str | Path | None
+    pending_rating_audio_path : str | Path | None
+    device(prompt: str, attempt: int)
+    strip(prompt: str, attempt: int)
+  }
+  style StreamlitInput fill:#EEDD88
+  class ToolCall {
+    arguments : dict
+    name : str
+  }
+  style ToolCall fill:#BBCC33
+  class Verdict {
+    expected : dict
+    item : str
+    outcome : str
+    read : dict
+    reason : str
+  }
+  style Verdict fill:#99DDFF
+  class _EnterWatcher {
+    started : bool
+    drain() None
+    pressed() bool
+    start() None
+  }
+  style _EnterWatcher fill:#EEDD88
+  class _OneReading {
+    audio_path : NoneType, str | None
+    confidence : NoneType, float | None
+    text : NoneType, str
+    device(prompt: str, attempt: int) Read
+    strip(prompt: str, attempt: int) Read
+  }
+  style _OneReading fill:#BBCC33
+  LocalTranscriber --* LiveInput : asr
+  Recorder --* LiveInput : recorder
+  Adjudicator --o Orchestrator : adj
+  Adjudicator --o ScriptedInput : adj
+  LLM --o Orchestrator : llm
+  RunLog --o Orchestrator : log

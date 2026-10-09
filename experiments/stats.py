@@ -1,8 +1,8 @@
 """Block 9 statistics for the experiment scripts: wilson_ci and mcnemar_exact.
 
 This is the entry point the experiments use. The implementation is one level
-down in src/redlining/stats.py, and this module re-exports it unchanged --
-same objects, not copies, as a test asserts.
+down in src/redlining/core/stats.py, and this module re-exports it
+unchanged -- same objects, not copies, as a test asserts.
 
 The split is not a preference. src/redlining/score.py reports three of the
 four rates that need an interval (fault detection, redline precision,
@@ -13,7 +13,7 @@ drift apart, which is the one outcome worth avoiding: the thesis quotes both
 files. So the implementation sits where both can reach it, and this module
 keeps experiments/stats.py as the name the analysis scripts import.
 
-Read src/redlining/stats.py for the reasoning behind the two choices that
+Read src/redlining/core/stats.py for the reasoning behind the two choices that
 matter -- the Wilson score interval rather than the normal approximation,
 and the exact binomial rather than the chi-square form of McNemar's test --
 and for why the character error rate is deliberately given no interval.
@@ -25,7 +25,7 @@ Run it for a quick look at both functions over the values this study uses:
 
 from __future__ import annotations
 
-from redlining.stats import (
+from redlining.core.stats import (
     DEFAULT_CONF,
     fmt_ci,
     fmt_rate,
